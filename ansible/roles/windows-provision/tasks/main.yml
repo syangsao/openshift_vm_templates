@@ -36,7 +36,7 @@
         pvc:
           storageClassName: "{{ vm_storage_class }}"
           accessModes:
-            - ReadOnlyMany
+            - ReadWriteMany
           resources:
             requests:
               storage: 1Gi
@@ -201,7 +201,7 @@
         pvc:
           storageClassName: "{{ vm_storage_class }}"
           accessModes:
-            - ReadOnlyMany
+            - ReadWriteMany
           resources:
             requests:
               storage: "{{ vm_boot_size }}"
