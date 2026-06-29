@@ -98,6 +98,37 @@
         </OSImage>
       </ImageInstall>
 
+      <!-- Load virtio storage driver from CD-ROM so Windows Setup can see the disk -->
+      <DriverConfiguration>
+        <WillShowUI>Never</WillShowUI>
+        <Path>
+          <!-- virtio-drivers CD-ROM — try all possible drive letters -->
+          <Path>D:\amd64\w11\</Path>
+          <Path>E:\amd64\w11\</Path>
+          <Path>F:\amd64\w11\</Path>
+          <Path>G:\amd64\w11\</Path>
+          <Path>H:\amd64\w11\</Path>
+          <Path>I:\amd64\w11\</Path>
+          <Path>J:\amd64\w11\</Path>
+          <Path>K:\amd64\w11\</Path>
+          <Path>L:\amd64\w11\</Path>
+          <Path>M:\amd64\w11\</Path>
+          <Path>N:\amd64\w11\</Path>
+          <Path>O:\amd64\w11\</Path>
+          <Path>P:\amd64\w11\</Path>
+          <Path>Q:\amd64\w11\</Path>
+          <Path>R:\amd64\w11\</Path>
+          <Path>S:\amd64\w11\</Path>
+          <Path>T:\amd64\w11\</Path>
+          <Path>U:\amd64\w11\</Path>
+          <Path>V:\amd64\w11\</Path>
+          <Path>W:\amd64\w11\</Path>
+          <Path>X:\amd64\w11\</Path>
+          <Path>Y:\amd64\w11\</Path>
+          <Path>Z:\amd64\w11\</Path>
+        </Path>
+      </DriverConfiguration>
+
       <UserData>
         <AcceptEula>true</AcceptEula>
         <ProductKey>
