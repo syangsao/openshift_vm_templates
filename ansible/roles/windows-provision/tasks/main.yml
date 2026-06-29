@@ -134,13 +134,13 @@
               devices:
                 autoattachPodInterface: false
                 disks:
-                  # 1. Windows ISO (boot source)
-                  - bootOrder: 2
+                  # 1. Windows ISO (boot source) — bootOrder 1 for initial install
+                  - bootOrder: 1
                     cdrom:
                       bus: sata
                     name: windows-iso
-                  # 2. Blank data disk (install target)
-                  - bootOrder: 1
+                  # 2. Blank data disk (install target) — bootOrder 2
+                  - bootOrder: 2
                     name: data-disk
                   # 3. Virtio drivers
                   - cdrom:
@@ -211,7 +211,7 @@
     export KUBECONFIG="{{ kubeconfig }}"
     oc get dv "{{ vm_name }}-win-iso" -n "{{ vm_namespace }}" -o jsonpath='{.status.phase}'
   register: win_iso_phase
-  retries: 60
+  retries: 90
   delay: 10
   until: "'Succeeded' in win_iso_phase.stdout"
 
@@ -237,12 +237,7 @@
   ansible.builtin.shell: |
     set -euo pipefail
     export KUBECONFIG="{{ kubeconfig }}"
-    pip3 install websocket-client --quiet 2>/dev/null || true
-    python3 "{{ role_path }}/files/key_injector.py" \
-      --vmi "{{ vm_name }}" \
-      --namespace "{{ vm_namespace }}" \
-      --kubeconfig "{{ kubeconfig }}" \
-      --timeout 180
+    python3 "{{ role_path }}/files/key_injector.py" "{{ vm_name }}" "{{ vm_namespace }}"
   register: key_inject
   failed_when: false
   changed_when: key_inject.rc == 0
