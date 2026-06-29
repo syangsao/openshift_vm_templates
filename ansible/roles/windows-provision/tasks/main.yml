@@ -41,22 +41,15 @@
             requests:
               storage: 1Gi
 
-- name: Wait for upload URL
+- name: Wait for upload to be ready
   ansible.builtin.shell: |
     set -euo pipefail
     export KUBECONFIG="{{ kubeconfig }}"
-    oc get dv "{{ unattend_iso_dv }}" -n "{{ vm_namespace }}" -o jsonpath='{.status.upload.sessionID}'
-  register: upload_session
+    oc get dv "{{ unattend_iso_dv }}" -n "{{ vm_namespace }}" -o jsonpath='{.status.phase}'
+  register: upload_phase
   retries: 10
   delay: 5
-  until: upload_session.stdout | length > 0
-
-- name: Get upload proxy URL
-  ansible.builtin.shell: |
-    set -euo pipefail
-    export KUBECONFIG="{{ kubeconfig }}"
-    oc get dv "{{ unattend_iso_dv }}" -n "{{ vm_namespace }}" -o jsonpath='{.status.upload.proxyURL}'
-  register: upload_url
+  until: "'UploadReady' in upload_phase.stdout"
 
 - name: Upload ISO content to cluster
   ansible.builtin.shell: |
@@ -67,6 +60,16 @@
       --size=1G \
       "{{ unattend_iso_dv }}" \
       -n "{{ vm_namespace }}"
+
+- name: Wait for upload to complete
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ kubeconfig }}"
+    oc get dv "{{ unattend_iso_dv }}" -n "{{ vm_namespace }}" -o jsonpath='{.status.phase}'
+  register: dv_phase
+  retries: 30
+  delay: 10
+  until: "'Succeeded' in dv_phase.stdout"
 
 - name: Create blank data disk DataVolume
   kubernetes.core.k8s:
