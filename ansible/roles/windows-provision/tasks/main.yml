@@ -58,9 +58,9 @@
     virtctl image-upload dv "{{ unattend_iso_dv }}" \
       -n "{{ vm_namespace }}" \
       --size=1G \
-      --image-file="{{ role_path }}/files/autounattend.iso" \
+      --image-path="{{ role_path }}/files/autounattend.iso" \
       --insecure \
-      --force
+      --force-bind
 
 - name: Wait for upload to complete
   ansible.builtin.shell: |
