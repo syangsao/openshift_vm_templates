@@ -206,14 +206,9 @@
               storage: "{{ vm_boot_size }}"
 
 - name: Start VirtualMachine
-  kubernetes.core.k8s:
-    kubeconfig: "{{ kubeconfig }}"
-    namespace: "{{ vm_namespace }}"
-    state: present
-    definition:
-      apiVersion: kubevirt.io/v1
-      kind: VirtualMachine
-      metadata:
-        name: "{{ vm_name }}"
-      spec:
-        running: true
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ kubeconfig }}"
+    oc patch vm "{{ vm_name }}" -n "{{ vm_namespace }}" \
+      --type merge \
+      -p '{"spec":{"runStrategy":"Always"}}'
