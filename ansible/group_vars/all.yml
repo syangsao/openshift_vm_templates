@@ -15,7 +15,7 @@ vm_uuid: "f4fe09d5-a810-4584-9e54-30396e94c245"  # Generate unique per VM
 
 # Storage
 vm_storage_class: "nfs-csi"
-vm_boot_size: "30Gi"
+vm_boot_size: "50Gi"
 vm_data_size: "100Gi"
 
 # Network
