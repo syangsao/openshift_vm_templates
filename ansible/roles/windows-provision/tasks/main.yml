@@ -130,6 +130,7 @@
               app: "{{ vm_name }}"
           spec:
             architecture: amd64
+            evictionStrategy: None
             domain:
               devices:
                 autoattachPodInterface: false
