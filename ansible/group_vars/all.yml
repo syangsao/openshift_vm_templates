@@ -1,0 +1,48 @@
+# ============================================================
+# Cluster & VM Configuration
+# ============================================================
+
+# OpenShift cluster
+kubeconfig: "/home/syangsao/ocp421-luke/auth/kubeconfig"
+vm_namespace: "virt-windows"
+
+# VM settings
+vm_name: "win11-auto-01"
+vm_instancetype: "u1.large"
+vm_preference: "windows.11.virtio"
+vm_run_strategy: "RerunOnFailure"
+vm_uuid: "f4fe09d5-a810-4584-9e54-30396e94c245"  # Generate unique per VM
+
+# Storage
+vm_storage_class: "nfs-csi"
+vm_boot_size: "30Gi"
+vm_data_size: "100Gi"
+
+# Network
+vm_network: "default/vlan-60"
+vm_mac: "02:f2:1a:73:a8:66"  # Generate unique per VM
+
+# Windows ISO DataSource
+windows_datasource_name: "windows-11-25h2-amd64"
+windows_datasource_namespace: "openshift-virtualization-os-images"
+
+# Virtio drivers
+virtio_drivers_image: "registry.redhat.io/container-native-virtualization/virtio-win-rhel9@sha256:7e06e1f52a434d4602657c920144504fbaed955d0998535bdf345716355ce83a"
+
+# unattend.xml settings
+windows_language: "en-US"
+windows_timezone: "UTC"
+windows_workgroup: "WORKGROUP"
+windows_admin_password: "P@ssw0rd1234!"
+windows_computer_name: "{{ vm_name | regex_replace('-', '') | upper }}"
+windows_edition: "Windows 11 Pro"
+
+# ISO upload settings
+unattend_iso_dv: "{{ vm_name }}-unattend"
+
+# WinRM connection settings (for post-install)
+ansible_winrm_transport: "basic"
+ansible_winrm_server_cert_validation: "ignore"
+ansible_user: "Administrator"
+ansible_password: "{{ windows_admin_password }}"
+ansible_port: 5985

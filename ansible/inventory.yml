@@ -1,0 +1,10 @@
+all:
+  children:
+    local:
+      hosts:
+        localhost:
+          ansible_connection: local
+    windows:
+      hosts: {}
+        # Populated dynamically after VM provisioning
+        # Run with: ansible-playbook site.yml --limit windows -i "WIN_IP,ansible_connection=winrm,"

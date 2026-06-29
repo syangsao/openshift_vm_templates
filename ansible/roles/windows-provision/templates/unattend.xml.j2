@@ -1,0 +1,263 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Autounattend.xml for fully automated Windows 11 installation on OpenShift Virtualization
+  
+  Flow:
+    1. Windows PE boots from Windows ISO, finds this autounattend.xml on CD-ROM
+    2. Partitions data disk (Disk 0 = blank virtio disk), installs Windows
+    3. On first logon: enables WinRM, installs virtio drivers, starts Windows Update
+    4. Ansible connects via WinRM for further configuration
+  
+  Reference:
+    https://learn.microsoft.com/windows-hardware/manufacture/desktop/update-windows-settings-and-scripts-create-your-own-answer-file-sxs
+-->
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+
+  <!-- ========================================================================
+       Windows PE phase — runs during initial boot from Windows ISO
+       ======================================================================== -->
+  <settings pass="windowsPE">
+    <component name="Microsoft-Windows-International-Core-WinPE"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral"
+               versionScope="nonSxS">
+      <SetupUILanguage>
+        <UILanguage>{{ windows_language }}</UILanguage>
+      </SetupUILanguage>
+      <InputLocale>{{ windows_language }}</InputLocale>
+      <SystemLocale>{{ windows_language }}</SystemLocale>
+      <UserLocale>{{ windows_language }}</UserLocale>
+      <UILanguage>{{ windows_language }}</UILanguage>
+    </component>
+
+    <component name="Microsoft-Windows-Setup"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral"
+               versionScope="nonSxS">
+      <DiskConfiguration>
+        <WillShowUI>OnError</WillShowUI>
+        <Disk wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+          <!-- Disk 0 = the blank data disk (virtio disk, bootOrder 1) -->
+          <DiskID>0</DiskID>
+          <WillWipeDisk>true</WillWipeDisk>
+          <CreatePartitions>
+            <!-- EFI System Partition -->
+            <CreatePartition wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+              <Order>1</Order>
+              <Type>EFI</Type>
+              <Size>100</Size>
+            </CreatePartition>
+            <!-- Microsoft Reserved -->
+            <CreatePartition wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+              <Order>2</Order>
+              <Type>MSR</Type>
+              <Size>128</Size>
+            </CreatePartition>
+            <!-- Windows partition — takes all remaining space -->
+            <CreatePartition wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+              <Order>3</Order>
+              <Type>Primary</Type>
+              <Extend>true</Extend>
+            </CreatePartition>
+          </CreatePartitions>
+          <ModifyPartitions>
+            <ModifyPartition wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+              <Order>1</Order>
+              <PartitionID>1</PartitionID>
+              <Format>FAT32</Format>
+            </ModifyPartition>
+            <ModifyPartition wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+              <Order>2</Order>
+              <PartitionID>2</PartitionID>
+            </ModifyPartition>
+            <ModifyPartition wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+              <Order>3</Order>
+              <PartitionID>3</PartitionID>
+              <Format>NTFS</Format>
+              <Label>Windows</Label>
+            </ModifyPartition>
+          </ModifyPartitions>
+        </Disk>
+      </DiskConfiguration>
+
+      <ImageInstall>
+        <OSImage>
+          <InstallFrom>
+            <MetaData wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+              <Key>/IMAGE/NAME</Key>
+              <!-- Match the edition in the Windows 11 ISO -->
+              <Value>Windows 11 Pro</Value>
+            </MetaData>
+          </InstallFrom>
+          <InstallTo>
+            <DiskID>0</DiskID>
+            <PartitionID>3</PartitionID>
+          </InstallTo>
+        </OSImage>
+      </ImageInstall>
+
+      <UserData>
+        <AcceptEula>true</AcceptEula>
+        <ProductKey>
+          <!-- Empty = use KMS/MAK or volume license -->
+          <Key></Key>
+        </ProductKey>
+      </UserData>
+
+      <EnableFirewall>false</EnableFirewall>
+      <EnableNetwork>true</EnableNetwork>
+    </component>
+  </settings>
+
+  <!-- ========================================================================
+       Specialize phase — runs on first boot before OOBE
+       ======================================================================== -->
+  <settings pass="specialize">
+    <component name="Microsoft-Windows-Shell-Setup"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral"
+               versionScope="nonSxS">
+      <ComputerName>{{ windows_computer_name }}</ComputerName>
+      <ProductKey></ProductKey>
+      <RegisteredOrganization>OpenShift Virtualization</RegisteredOrganization>
+      <RegisteredOwner>Administrator</RegisteredOwner>
+    </component>
+
+    <component name="Microsoft-Windows-International-Core"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral"
+               versionScope="nonSxS">
+      <InputLocale>{{ windows_language }}</InputLocale>
+      <SystemLocale>{{ windows_language }}</SystemLocale>
+      <UserLocale>{{ windows_language }}</UserLocale>
+      <UILanguage>{{ windows_language }}</UILanguage>
+    </component>
+
+    <!-- Enable Remote Desktop -->
+    <component name="Microsoft-Windows-TerminalServices-LocalSessionManager"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral"
+               versionScope="nonSxS">
+      <fDenyTSConnections>false</fDenyTSConnections>
+    </component>
+
+    <component name="Microsoft-Windows-TerminalServices-RDP-WinStationExtensions"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral"
+               versionScope="nonSxS">
+      <UserAuthentication>0</UserAuthentication>
+    </component>
+
+    <!-- Open firewall for RDP and WinRM -->
+    <component name="Networking-MPSSVC-Svc"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral"
+               versionScope="nonSxS">
+      <FirewallGroups>
+        <FirewallGroup wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+          <Active>true</Active>
+          <Profile>all</Profile>
+          <Group>Remote Desktop</Group>
+        </FirewallGroup>
+        <FirewallGroup wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+          <Active>true</Active>
+          <Profile>all</Profile>
+          <Group>Windows Remote Management (HTTP-In)</Group>
+        </FirewallGroup>
+      </FirewallGroups>
+    </component>
+  </settings>
+
+  <!-- ========================================================================
+       OOBE phase — out-of-box experience (fully skipped)
+       ======================================================================== -->
+  <settings pass="oobeSystem">
+    <component name="Microsoft-Windows-Shell-Setup"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral"
+               versionScope="nonSxS">
+
+      <UserAccounts>
+        <LocalAccounts>
+          <LocalAccount wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+            <Name>Administrator</Name>
+            <Group>Administrators</Group>
+            <Password>
+              <Value>{{ windows_admin_password }}</Value>
+              <PlainText>true</PlainText>
+            </Password>
+          </LocalAccount>
+        </LocalAccounts>
+      </UserAccounts>
+
+      <AutoLogon>
+        <Password>
+          <Value>{{ windows_admin_password }}</Value>
+          <PlainText>true</PlainText>
+        </Password>
+        <Enabled>true</Enabled>
+        <LogonCount>3</LogonCount>
+        <Username>Administrator</Username>
+      </AutoLogon>
+
+      <FirstLogonCommands>
+        <!-- 1. Enable WinRM for Ansible post-install -->
+        <SynchronousCommand wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+          <Order>1</Order>
+          <CommandLine>cmd /c powershell -NoProfile -Command "Set-Item WSMan:\localhost\Service\AllowUnencrypted $true; Set-Item WSMan:\localhost\Service\Auth\Basic $true; Enable-PSRemoting -Force"</CommandLine>
+          <Description>Enable WinRM</Description>
+        </SynchronousCommand>
+
+        <!-- 2. Install virtio drivers from containerDisk CD-ROM -->
+        <SynchronousCommand wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+          <Order>2</Order>
+          <CommandLine>cmd /c powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-Volume | Where-Object {$_.DriveType -eq 'CD-ROM'} | ForEach-Object {$l=$_.DriveLetter; $s=Get-ChildItem \"$l:\\" -Filter 'virtio-win-gt-x64.exe' -ErrorAction SilentlyContinue; if($s){&amp; $s.FullName '/S'}}"</CommandLine>
+          <Description>Install Virtio Drivers</Description>
+        </SynchronousCommand>
+
+        <!-- 3. Start Windows Update in background -->
+        <SynchronousCommand wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+          <Order>3</Order>
+          <CommandLine>cmd /c powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process powershell -ArgumentList '-NoProfile -ExecutionPolicy Bypass -Command &quot;Start-Sleep 180; $session=New-Object -ComObject Microsoft.Update.Session; $searcher=$session.CreateUpdateSearcher(); $result=$searcher.Search(&apos;IsInstalled=0&apos;); if($result.Updates.Count -gt 0){$coll=New-Object -ComObject Microsoft.Update.UpdateColl; $result.Updates|%{$coll.Add($_)}; $installer=New-Object -ComObject Microsoft.Update.Installer; $installer.Updates=$coll; $installer.Install()}&quot;' -WindowStyle Hidden"</CommandLine>
+          <Description>Run Windows Update</Description>
+        </SynchronousCommand>
+      </FirstLogonCommands>
+
+      <OOBE>
+        <HideEULAPage>true</HideEULAPage>
+        <HideLocalAccountScreen>true</HideLocalAccountScreen>
+        <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
+        <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+        <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+        <NetworkLocation>Work</NetworkLocation>
+        <ProtectYourPC>3</ProtectYourPC>
+        <SkipUserOOBE>true</SkipUserOOBE>
+        <SkipMachineOOBE>true</SkipMachineOOBE>
+      </OOBE>
+
+      <TimeZone>{{ windows_timezone }}</TimeZone>
+    </component>
+
+    <component name="Microsoft-Windows-International-Core"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral"
+               versionScope="nonSxS">
+      <InputLocale>{{ windows_language }}</InputLocale>
+      <SystemLocale>{{ windows_language }}</SystemLocale>
+      <UserLocale>{{ windows_language }}</UserLocale>
+      <UILanguage>{{ windows_language }}</UILanguage>
+    </component>
+  </settings>
+
+  <cpi:offlineImage cpi:source="wim:c:/sources/install.wim#Windows 11 Pro"
+                    xmlns:cpi="urn:schemas-microsoft-com:cpi" />
+</unattend>

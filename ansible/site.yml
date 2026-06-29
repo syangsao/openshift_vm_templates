@@ -1,0 +1,82 @@
+---
+# =============================================================================
+# Site Playbook — Full Windows 11 VM provisioning pipeline
+# =============================================================================
+
+# Phase 1: Provision VM (runs on localhost)
+- name: PROVISION — Create Windows 11 VM
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    # Generate unique UUID if not provided
+    vm_uuid: "{{ vm_uuid | default(lookup('ansible.builtin.password', '/dev/null', chars=['hexdigits'], length=32, seed=vm_name)) }}"
+  pre_tasks:
+    - name: Display provisioning summary
+      ansible.builtin.debug:
+        msg: |
+          Provisioning Windows 11 VM
+          ===========================
+          Name: {{ vm_name }}
+          Namespace: {{ vm_namespace }}
+          Instance Type: {{ vm_instancetype }}
+          Preference: {{ vm_preference }}
+          Data Disk: {{ vm_data_size }}
+          Network: {{ vm_network }}
+          MAC: {{ vm_mac }}
+          UUID: {{ vm_uuid }}
+          DataSource: {{ windows_datasource_name }}
+          Storage Class: {{ vm_storage_class }}
+  roles:
+    - windows-provision
+
+# Phase 2: Wait for Windows to boot (runs on localhost)
+- name: WAIT — Wait for Windows to boot and WinRM to be available
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Wait for VMI to be running
+      ansible.builtin.shell: |
+        set -euo pipefail
+        export KUBECONFIG="{{ kubeconfig }}"
+        oc get vmi "{{ vm_name }}" -n "{{ vm_namespace }}" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
+      register: vmi_status
+      retries: 60
+      delay: 30
+      until: "'True' in vmi_status.stdout"
+
+    - name: Get VM IP address
+      ansible.builtin.shell: |
+        set -euo pipefail
+        export KUBECONFIG="{{ kubeconfig }}"
+        oc get vmi "{{ vm_name }}" -n "{{ vm_namespace }}" -o jsonpath='{.status.interfaces[0].ipAddress}'
+      register: vm_ip
+      retries: 20
+      delay: 15
+      until: vm_ip.stdout | length > 0
+
+    - name: Display VM IP
+      ansible.builtin.debug:
+        msg: "VM IP: {{ vm_ip.stdout }}"
+
+    - name: Wait for WinRM port
+      ansible.builtin.wait_for:
+        port: 5985
+        host: "{{ vm_ip.stdout }}"
+        timeout: 300
+        delay: 60
+
+# Phase 3: Configure Windows (runs against the VM via WinRM)
+- name: CONFIGURE — Post-install Windows configuration
+  hosts: windows
+  connection: winrm
+  gather_facts: true
+  vars:
+    ansible_winrm_transport: "basic"
+    ansible_winrm_server_cert_validation: "ignore"
+    ansible_user: "Administrator"
+    ansible_password: "{{ windows_admin_password }}"
+    ansible_port: 5985
+  roles:
+    - windows-configure

@@ -1,0 +1,219 @@
+---
+# =============================================================================
+# Windows Provision Role — Creates VM with unattend ISO + Windows ISO + blank disk
+# =============================================================================
+
+- name: Generate unattend.xml
+  ansible.builtin.template:
+    src: unattend.xml.j2
+    dest: "{{ role_path }}/files/autounattend.xml"
+    mode: '0644'
+
+- name: Create unattend ISO using podman
+  ansible.builtin.shell: |
+    set -euo pipefail
+    ISO_PATH="{{ role_path }}/files/autounattend.iso"
+    podman run --rm \
+      -v {{ role_path }}/files:/data:Z \
+      quay.io/containerdisks/mkisofs \
+      -o /data/autounattend.iso \
+      -V "WIN_CONFIG" \
+      -J -R \
+      -input-charset utf-8 \
+      /data/autounattend.xml
+  args:
+    creates: "{{ role_path }}/files/autounattend.iso"
+
+- name: Upload unattend ISO to cluster as DataVolume
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig }}"
+    namespace: "{{ vm_namespace }}"
+    state: present
+    definition:
+      apiVersion: cdi.kubevirt.io/v1beta1
+      kind: DataVolume
+      metadata:
+        name: "{{ unattend_iso_dv }}"
+      spec:
+        source:
+          upload: {}
+        pvc:
+          storageClassName: "{{ vm_storage_class }}"
+          accessModes:
+            - ReadOnlyMany
+          resources:
+            requests:
+              storage: 1Gi
+
+- name: Wait for upload URL
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ kubeconfig }}"
+    oc get dv "{{ unattend_iso_dv }}" -n "{{ vm_namespace }}" -o jsonpath='{.status.upload.sessionID}'
+  register: upload_session
+  retries: 10
+  delay: 5
+  until: upload_session.stdout | length > 0
+
+- name: Get upload proxy URL
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ kubeconfig }}"
+    oc get dv "{{ unattend_iso_dv }}" -n "{{ vm_namespace }}" -o jsonpath='{.status.upload.proxyURL}'
+  register: upload_url
+
+- name: Upload ISO content to cluster
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ kubeconfig }}"
+    oc start-upload \
+      --from-file="{{ role_path }}/files/autounattend.iso" \
+      --size=1G \
+      "{{ unattend_iso_dv }}" \
+      -n "{{ vm_namespace }}"
+
+- name: Create blank data disk DataVolume
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig }}"
+    namespace: "{{ vm_namespace }}"
+    state: present
+    definition:
+      apiVersion: cdi.kubevirt.io/v1beta1
+      kind: DataVolume
+      metadata:
+        name: "{{ vm_name }}-data"
+      spec:
+        source:
+          blank: {}
+        pvc:
+          storageClassName: "{{ vm_storage_class }}"
+          accessModes:
+            - ReadWriteMany
+          resources:
+            requests:
+              storage: "{{ vm_data_size }}"
+
+- name: Wait for data disk to be bound
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ kubeconfig }}"
+    oc get pvc "{{ vm_name }}-data" -n "{{ vm_namespace }}" -o jsonpath='{.status.phase}'
+  register: pvc_status
+  retries: 30
+  delay: 10
+  until: "'Bound' in pvc_status.stdout"
+
+- name: Create VirtualMachine
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig }}"
+    namespace: "{{ vm_namespace }}"
+    state: present
+    definition:
+      apiVersion: kubevirt.io/v1
+      kind: VirtualMachine
+      metadata:
+        name: "{{ vm_name }}"
+        labels:
+          app: windows-vm
+          os: windows11
+      spec:
+        dataVolumeTemplates: []
+        instancetype:
+          name: "{{ vm_instancetype }}"
+        preference:
+          kind: VirtualMachineClusterPreference
+          name: "{{ vm_preference }}"
+        runStrategy: "{{ vm_run_strategy }}"
+        template:
+          metadata:
+            labels:
+              app: "{{ vm_name }}"
+          spec:
+            architecture: amd64
+            domain:
+              devices:
+                autoattachPodInterface: false
+                disks:
+                  # 1. Windows ISO (boot source)
+                  - bootOrder: 2
+                    cdrom:
+                      bus: sata
+                    name: windows-iso
+                  # 2. Blank data disk (install target)
+                  - bootOrder: 1
+                    name: data-disk
+                  # 3. Virtio drivers
+                  - cdrom:
+                      bus: sata
+                    name: virtio-drivers
+                  # 4. unattend ISO (auto-install config)
+                  - cdrom:
+                      bus: sata
+                    name: unattend-iso
+                interfaces:
+                  - bridge: {}
+                    macAddress: "{{ vm_mac }}"
+                    model: virtio
+                    name: default
+                    state: up
+              firmware:
+                uuid: "{{ vm_uuid }}"
+              machine:
+                type: pc-q35-rhel9.8.0
+            networks:
+              - multus:
+                  networkName: "{{ vm_network }}"
+                name: default
+            volumes:
+              # Windows ISO from DataSource
+              - dataVolume:
+                  name: "{{ vm_name }}-win-iso"
+                name: windows-iso
+              # Blank data disk
+              - dataVolume:
+                  name: "{{ vm_name }}-data"
+                name: data-disk
+              # Virtio drivers containerDisk
+              - containerDisk:
+                  image: "{{ virtio_drivers_image }}"
+                name: virtio-drivers
+              # unattend ISO
+              - dataVolume:
+                  name: "{{ unattend_iso_dv }}"
+                name: unattend-iso
+
+- name: Clone Windows ISO DataSource for this VM
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig }}"
+    namespace: "{{ vm_namespace }}"
+    state: present
+    definition:
+      apiVersion: cdi.kubevirt.io/v1beta1
+      kind: DataVolume
+      metadata:
+        name: "{{ vm_name }}-win-iso"
+      spec:
+        sourceRef:
+          kind: DataSource
+          name: "{{ windows_datasource_name }}"
+          namespace: "{{ windows_datasource_namespace }}"
+        pvc:
+          storageClassName: "{{ vm_storage_class }}"
+          accessModes:
+            - ReadOnlyMany
+          resources:
+            requests:
+              storage: "{{ vm_boot_size }}"
+
+- name: Start VirtualMachine
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig }}"
+    namespace: "{{ vm_namespace }}"
+    state: present
+    definition:
+      apiVersion: kubevirt.io/v1
+      kind: VirtualMachine
+      metadata:
+        name: "{{ vm_name }}"
+      spec:
+        running: true
