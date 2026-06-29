@@ -55,11 +55,12 @@
   ansible.builtin.shell: |
     set -euo pipefail
     export KUBECONFIG="{{ kubeconfig }}"
-    oc start-upload \
-      --from-file="{{ role_path }}/files/autounattend.iso" \
+    virtctl image-upload dv "{{ unattend_iso_dv }}" \
+      -n "{{ vm_namespace }}" \
       --size=1G \
-      "{{ unattend_iso_dv }}" \
-      -n "{{ vm_namespace }}"
+      --image-file="{{ role_path }}/files/autounattend.iso" \
+      --insecure \
+      --force
 
 - name: Wait for upload to complete
   ansible.builtin.shell: |
