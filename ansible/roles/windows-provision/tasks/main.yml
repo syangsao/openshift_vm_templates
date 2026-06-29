@@ -15,12 +15,8 @@
     ISO_PATH="{{ role_path }}/files/autounattend.iso"
     podman run --rm \
       -v {{ role_path }}/files:/data:Z \
-      quay.io/containerdisks/mkisofs \
-      -o /data/autounattend.iso \
-      -V "WIN_CONFIG" \
-      -J -R \
-      -input-charset utf-8 \
-      /data/autounattend.xml
+      registry.access.redhat.com/ubi9/ubi-minimal:latest \
+      /bin/sh -c 'dnf install -y genisoimage && genisoimage -o /data/autounattend.iso -V WIN_CONFIG -J -R -input-charset utf-8 /data/autounattend.xml'
   args:
     creates: "{{ role_path }}/files/autounattend.iso"
 

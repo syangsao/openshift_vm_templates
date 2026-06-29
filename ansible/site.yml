@@ -8,10 +8,13 @@
   hosts: localhost
   connection: local
   gather_facts: false
-  vars:
-    # Generate unique UUID if not provided
-    vm_uuid: "{{ vm_uuid | default(lookup('ansible.builtin.password', '/dev/null', chars=['hexdigits'], length=32, seed=vm_name)) }}"
+  tags:
+    - provision
   pre_tasks:
+    - name: Generate UUID if not provided
+      ansible.builtin.set_fact:
+        vm_uuid: "{{ vm_uuid | default(lookup('ansible.builtin.password', '/dev/null', chars=['hexdigits'], length=32, seed=vm_name)) }}"
+
     - name: Display provisioning summary
       ansible.builtin.debug:
         msg: |
@@ -35,6 +38,8 @@
   hosts: localhost
   connection: local
   gather_facts: false
+  tags:
+    - wait
   tasks:
     - name: Wait for VMI to be running
       ansible.builtin.shell: |
@@ -72,6 +77,8 @@
   hosts: windows
   connection: winrm
   gather_facts: true
+  tags:
+    - configure
   vars:
     ansible_winrm_transport: "basic"
     ansible_winrm_server_cert_validation: "ignore"
