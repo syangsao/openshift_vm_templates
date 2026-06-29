@@ -205,6 +205,16 @@
             requests:
               storage: "{{ vm_boot_size }}"
 
+- name: Wait for Windows ISO DataVolume to succeed
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ kubeconfig }}"
+    oc get dv "{{ vm_name }}-win-iso" -n "{{ vm_namespace }}" -o jsonpath='{.status.phase}'
+  register: win_iso_phase
+  retries: 60
+  delay: 10
+  until: "'Succeeded' in win_iso_phase.stdout"
+
 - name: Start VirtualMachine
   ansible.builtin.shell: |
     set -euo pipefail
@@ -212,3 +222,38 @@
     oc patch vm "{{ vm_name }}" -n "{{ vm_namespace }}" \
       --type merge \
       -p '{"spec":{"runStrategy":"Always"}}'
+
+- name: Wait for VMI to be running
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ kubeconfig }}"
+    oc get vmi "{{ vm_name }}" -n "{{ vm_namespace }}" -o jsonpath='{.status.phase}'
+  register: vmi_phase
+  retries: 30
+  delay: 10
+  until: "'Running' in vmi_phase.stdout"
+
+- name: Inject keypress to Windows boot prompt
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ kubeconfig }}"
+    pip3 install websocket-client --quiet 2>/dev/null || true
+    python3 "{{ role_path }}/files/key_injector.py" \
+      --vmi "{{ vm_name }}" \
+      --namespace "{{ vm_namespace }}" \
+      --kubeconfig "{{ kubeconfig }}" \
+      --timeout 180
+  register: key_inject
+  failed_when: false
+  changed_when: key_inject.rc == 0
+
+- name: Report key injection result
+  ansible.builtin.debug:
+    msg: >
+      {% if key_inject.rc == 0 %}
+      Keypress injected successfully. Windows Setup should now proceed with unattend.xml.
+      {% else %}
+      WARNING: Could not inject keypress (rc={{ key_inject.rc }}).
+      The VM may have already booted or the prompt was missed.
+      Check the console: virtctl console {{ vm_name }} -n {{ vm_namespace }}
+      {% endif %}
