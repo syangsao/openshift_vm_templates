@@ -15,7 +15,7 @@
     ISO_PATH="{{ role_path }}/files/autounattend.iso"
     podman run --rm \
       -v {{ role_path }}/files:/data:Z \
-      registry.access.redhat.com/ubi9/ubi-minimal:latest \
+      registry.access.redhat.com/ubi9/ubi:latest \
       /bin/sh -c 'dnf install -y genisoimage && genisoimage -o /data/autounattend.iso -V WIN_CONFIG -J -R -input-charset utf-8 /data/autounattend.xml'
   args:
     creates: "{{ role_path }}/files/autounattend.iso"
