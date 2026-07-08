@@ -4,6 +4,7 @@ Windows VirtualMachine templates, provisioning scripts, and automation for OpenS
 
 ## Contents
 
+- [Clone This Repository](#clone-this-repository) — Get the templates and scripts
 - [Prerequisites](#prerequisites)
   - [Download and Upload VirtIO Drivers](#download-and-upload-virtio-drivers) — RPM → ISO → cluster upload
 - [WIM-to-Disk: Import Custom Windows Images](#wim-to-disk-import-custom-windows-images) — Convert a .wim to a bootable disk, upload, deploy
@@ -13,6 +14,26 @@ Windows VirtualMachine templates, provisioning scripts, and automation for OpenS
 - [Templates](#templates)
 - [Troubleshooting](#troubleshooting)
 - [Cluster Reference](CLUSTER_REFERENCE.md) — Cluster-specific values (luke)
+
+---
+
+## Clone This Repository
+
+This repo contains the VM templates, `autounattend.xml` reference, and automation scripts used in the guides below.
+
+```bash
+git clone https://github.com/syangsao/openshift_vm_templates.git
+cd openshift_vm_templates
+```
+
+The `templates/` directory contains:
+
+| File | Purpose |
+|---|---|
+| `windows11-vm.yaml` | VirtualMachine manifest with `{{vm.*}}` placeholders |
+| `autounattend.xml.example` | Windows OOBE automation XML with editable markers |
+
+Copy and edit these templates instead of writing YAML or XML from scratch.
 
 ---
 
