@@ -4,82 +4,24 @@ Windows VirtualMachine templates, provisioning scripts, and automation for OpenS
 
 ## Contents
 
-- [Manual VM Creation](#manual-vm-creation) — Script or hand-crafted YAML
-- [Ansible Automation](#ansible-automation) — Fully automated provisioning + configuration
-- [Golden Image Workflow](#golden-image-workflow) — Build a golden image, then clone for rapid deployment
-- [unattend.xml Reference](#unattendxml-reference) — Manual autounattend.xml creation for automated Windows install
+- [Prerequisites](#prerequisites)
+- [Manual Golden Image Workflow](#manual-golden-image-workflow) — Step-by-step: build, generalize, clone
+- [unattend.xml Reference](#unattendxml-reference) — Automated Windows installation
+- [Automation (still need to validate)](#automation-still-need-to-validate) — Script and Ansible playbook
+- [Templates](#templates)
+- [Troubleshooting](#troubleshooting)
 - [Cluster Reference](CLUSTER_REFERENCE.md) — Cluster-specific values (luke)
 
 ---
 
-## Quick Start
+## Prerequisites
 
-### Option A: Script (manual creation)
-
-```bash
-# Generate a Windows 11 VM manifest
-./scripts/create-vm.sh \
-  --name win11-dev-01 \
-  --namespace virt-windows \
-  --instancetype u1.large \
-  --data-size 100Gi \
-  --network default/vlan-60 \
-  --mac 02:f2:1a:73:a8:65
-
-# Apply and start
-oc apply -f win11-dev-01.yaml
-oc start vm/win11-dev-01 -n virt-windows
-```
-
-### Option B: Ansible (fully automated)
-
-```bash
-# Configure variables in ansible/group_vars/all.yml
-# Then run the full pipeline:
-cd ansible
-ansible-playbook site.yml
-```
-
-### Option C: Golden Image + Clone
-
-See [Golden Image Workflow](#golden-image-workflow) for building a base image and cloning it for rapid deployment.
-
----
-
-## Manual VM Creation
-
-### Script Options
-
-See `./scripts/create-vm.sh --help`. Key parameters:
-
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--name` | VM name (required) | — |
-| `--namespace` | Target namespace | `virt-windows` |
-| `--template` | OS template: `windows11`, `windows2025` | `windows11` |
-| `--instancetype` | KubeVirt instance type | `u1.large` |
-| `--data-size` | Data disk size | `100Gi` |
-| `--storage-class` | StorageClass name | `nfs-csi` |
-| `--network` | NetworkAttachmentDef ns/name | `default/vlan-60` |
-| `--mac` | Static MAC address | auto-generated |
-| `--run-strategy` | Run strategy | `RerunOnFailure` |
-| `--output` | Output file | `{name}.yaml` |
-| `--dry-run` | Print to stdout | — |
-
-### Architecture
-
-Each VM uses a two-disk pattern:
-
-1. **Boot volume** — Cloned from the OS DataSource (30Gi). Attached as CD-ROM during install.
-2. **Data volume** — Blank disk (configurable size). The guest OS is installed here.
-3. **Virtio drivers** — containerDisk. Provides network, storage, and balloon drivers.
-
-### Prerequisites
+### Cluster Resources
 
 Verify the cluster has the required resources:
 
 ```bash
-# DataSource
+# DataSource (Windows ISO)
 oc get datasource windows-11-25h2-amd64 -n openshift-virtualization-os-images
 
 # Instance type and preference
@@ -93,9 +35,27 @@ oc get network-attachment-definition vlan-60 -n default
 oc get storageclass nfs-csi
 ```
 
-### Step-by-Step
+### Architecture
 
-#### Step 1: Generate Unique Identifiers
+Each VM uses a three-disk pattern:
+
+1. **Boot volume** — Cloned from the OS DataSource (30Gi). Attached as CD-ROM during install.
+2. **Data volume** — Blank disk (configurable size). The guest OS is installed here.
+3. **Virtio drivers** — containerDisk. Provides network, storage, and balloon drivers.
+
+---
+
+## Manual Golden Image Workflow
+
+Build a fully configured Windows VM, generalize it with Sysprep, then clone it to deploy identical VMs in seconds.
+
+**Why golden images:** Deploying multiple identical Windows VMs without rebuilding from ISO each time. Per-VM provisioning drops from ~15 minutes to ~30 seconds.
+
+---
+
+### Step 1: Generate Unique Identifiers
+
+Each VM requires unique firmware UUIDs and optionally a static MAC address:
 
 ```bash
 # Firmware UUID
@@ -106,176 +66,195 @@ VM_SERIAL=$(cat /proc/sys/kernel/random/uuid)
 
 # MAC address (locally-administered, OUI 02:F2:1A)
 VM_MAC="02:f2:1a:73:a8:65"
+
+echo "UUID:   $VM_UUID"
+echo "Serial: $VM_SERIAL"
+echo "MAC:    $VM_MAC"
 ```
 
-#### Step 2: Create the VirtualMachine Manifest
+---
 
-Use `./scripts/create-vm.sh` or create YAML by hand. See `templates/windows11-vm.yaml` for a reference template.
+### Step 2: Create the VirtualMachine Manifest
+
+Create the YAML by hand or use `templates/windows11-vm.yaml` as a reference. Replace `<vm-name>`, UUIDs, and MAC with your values:
+
+```yaml
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: <vm-name>
+  namespace: virt-windows
+spec:
+  instancetype:
+    name: u1.large
+  preference:
+    kind: VirtualMachineClusterPreference
+    name: windows.11.virtio
+  runStrategy: RerunOnFailure
+
+  dataVolumeTemplates:
+    # Boot volume — cloned from OS DataSource
+    - metadata:
+        name: <vm-name>-boot
+      spec:
+        sourceRef:
+          kind: DataSource
+          name: windows-11-25h2-amd64
+          namespace: openshift-virtualization-os-images
+        storage:
+          resources:
+            requests:
+              storage: 30Gi
+          storageClassName: nfs-csi
+
+    # Data disk — blank, for guest OS installation
+    - metadata:
+        name: <vm-name>-data
+      spec:
+        source:
+          blank: {}
+        storage:
+          resources:
+            requests:
+              storage: 100Gi
+          storageClassName: nfs-csi
+
+  template:
+    metadata:
+      annotations:
+        kubevirt.io/pci-topology-version: v3
+      labels:
+        network.kubevirt.io/headlessService: headless
+    spec:
+      architecture: amd64
+      subdomain: headless
+
+      domain:
+        devices:
+          autoattachPodInterface: false
+          disks:
+            - bootOrder: 1
+              name: rootdisk
+            - bootOrder: 2
+              cdrom:
+                bus: sata
+              name: cdrom-iso
+            - cdrom:
+                bus: sata
+              name: windows-drivers-disk
+          interfaces:
+            - bridge: {}
+              macAddress: <vm-mac>
+              model: virtio
+              name: default
+              state: up
+
+        firmware:
+          uuid: <vm-uuid>
+          serial: <vm-serial>
+
+        machine:
+          type: pc-q35-rhel9.8.0
+
+      networks:
+        - multus:
+            networkName: default/vlan-60
+          name: default
+
+      volumes:
+        - dataVolume:
+            name: <vm-name>-boot
+          name: cdrom-iso
+        - dataVolume:
+            name: <vm-name>-data
+          name: rootdisk
+        - containerDisk:
+            image: registry.redhat.io/container-native-virtualization/virtio-win-rhel9@sha256:7e06e1f52a434d4602657c920144504fbaed955d0998535bdf345716355ce83a
+          name: windows-drivers-disk
+```
 
 **Key fields to customize:**
 
 | Field | Purpose | Example |
 |---|---|---|
-| `metadata.name` | VM name | `win11-dev-01` |
-| `spec.dataVolumeTemplates[*].name` | Must match `<vm-name>-boot` and `<vm-name>-data` | `win11-dev-01-boot` |
+| `metadata.name` | VM name | `win11-golden` |
+| `spec.dataVolumeTemplates[*].name` | Must match `<vm-name>-boot` and `<vm-name>-data` | `win11-golden-boot` |
 | `firmware.uuid` / `firmware.serial` | Unique per VM | Output from Step 1 |
 | `interfaces[0].macAddress` | Static MAC (optional) | `02:f2:1a:73:a8:65` |
 | `networks[0].multus.networkName` | NetworkAttachmentDef ref | `default/vlan-60` |
 
-#### Step 3: Apply and Start
+---
+
+### Step 3: Apply the Manifest
 
 ```bash
-oc apply -f win11-dev-01.yaml -n virt-windows
-
-# Wait for DataVolumes
-oc get datavolume -n virt-windows -w
-
-# Start the VM
-oc start vm/win11-dev-01 -n virt-windows
+oc apply -f <vm-name>.yaml -n virt-windows
 ```
 
-#### Step 4: Connect and Install
+---
+
+### Step 4: Wait for DataVolumes to Provision
+
+The boot volume is cloned from the DataSource. The data volume is created blank. Both must reach `Succeeded` before starting the VM:
+
+```bash
+oc get datavolume -n virt-windows -w
+
+# Expected output:
+# NAME                PHASE       PROGRESS
+# win11-golden-boot   Filling     25.3%
+# win11-golden-data   Bound       N/A
+```
+
+The boot volume clone typically takes 2-5 minutes depending on storage performance.
+
+---
+
+### Step 5: Start the VM
+
+```bash
+oc start vm/<vm-name> -n virt-windows
+
+# Verify
+oc get vm/<vm-name> -n virt-windows
+# STATUS should be Running
+```
+
+---
+
+### Step 6: Connect to the VM Console
 
 ```bash
 # noVNC console
-oc virt-launcher-console win11-dev-01 -n virt-windows
+oc virt-launcher-console <vm-name> -n virt-windows
 
 # SPICE URL for virt-viewer
-oc virt-launcher-spice-url win11-dev-01 -n virt-windows
+oc virt-launcher-spice-url <vm-name> -n virt-windows
 ```
+
+---
+
+### Step 7: Install Windows
 
 1. VM boots from Windows ISO (bootOrder 2, CD-ROM)
 2. Blank data disk (bootOrder 1) is the installation target
-3. If Windows does not detect the disk, load virtio storage drivers from `windows-drivers-disk` CD-ROM:
-   - Click **Load Driver** → browse to `viostor` folder → select driver for your Windows version
-4. Complete Windows installation
-5. After reboot, install remaining virtio drivers (network, balloon, QEMU guest agent)
-
-#### Step 5: Verify
-
-```bash
-# Check VMI status
-oc get vmi/win11-dev-01 -n virt-windows
-
-# Check interface IP (requires QEMU guest agent)
-oc describe vmi/win11-dev-01 -n virt-windows | grep -A5 "Interfaces:"
-
-# Take a snapshot for backup
-oc create volumesnapshot win11-dev-01-snapshot \
-  --source=pvc/win11-dev-01-data -n virt-windows
-```
+3. If Windows does not detect the disk, load the virtio storage driver from `windows-drivers-disk`:
+   - Click **Load Driver** → browse to `viostor\w11\amd64\` (or your Windows version) → select driver
+4. Complete the Windows installation
+5. After reboot, install remaining virtio drivers from the drivers CD-ROM:
+   - Network driver (`NetKVM`)
+   - Balloon driver
+   - **QEMU Guest Agent** (`qemu-ga-x86_64.msi`) — required for IP detection
 
 ---
 
-## Ansible Automation
+### Step 8: Configure the Base VM
 
-Fully automated Windows provisioning pipeline: unattend.xml generation → ISO creation → VM deployment → Windows installation → post-install configuration.
-
-### Architecture
-
-```
-Phase 1: PROVISION (localhost)
-  1. Generate unattend.xml from Jinja2 template
-  2. Create ISO with podman + genisoimage
-  3. Upload ISO to cluster as DataVolume
-  4. Clone Windows ISO DataSource
-  5. Create blank data disk DataVolume
-  6. Create VirtualMachine with all disks attached
-  7. Start VM + inject boot keypress
-
-Phase 2: WAIT (localhost)
-  8.  Wait for VMI to be Running
-  9.  Get VM IP address
-  10. Wait for WinRM port 5985
-
-Phase 3: CONFIGURE (WinRM → Windows VM)
-  11. Verify Windows version
-  12. Install virtio drivers
-  13. Run Windows Update
-  14. Reboot if needed
-  15. Configure power plan, disable hibernation
-```
-
-### Prerequisites
-
-- Ansible 2.15+ with `ansible.windows`, `kubernetes.core`, `community.general`
-- `oc` CLI with access to OpenShift cluster
-- `podman` for ISO creation
-- KubeVirt + CDI installed on cluster
-- Windows ISO DataSource available in `openshift-virtualization-os-images`
-
-### Configuration
-
-Edit `ansible/group_vars/all.yml`:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `vm_name` | `win11-auto-01` | VM name |
-| `vm_instancetype` | `u1.large` | Instance type |
-| `vm_preference` | `windows.11.virtio` | KubeVirt preference |
-| `vm_data_size` | `100Gi` | Data disk size |
-| `vm_network` | `default/vlan-60` | Network attachment |
-| `vm_mac` | `02:f2:1a:73:a8:66` | MAC address (unique per VM) |
-| `vm_uuid` | auto-generated | VM firmware UUID |
-| `windows_admin_password` | `P@ssw0rd1234!` | Administrator password |
-| `windows_language` | `en-US` | Windows language |
-| `windows_timezone` | `UTC` | Timezone |
-| `windows_edition` | `Windows 11 Pro` | Edition to install from ISO |
-| `windows_computer_name` | derived from vm_name | Hostname |
-
-### Usage
-
-```bash
-cd ansible
-
-# Full pipeline (provision + wait + configure)
-ansible-playbook site.yml
-
-# Provision only
-ansible-playbook site.yml --tags provision
-
-# Configure only (after VM is running)
-ansible-playbook site.yml --tags configure
-```
-
-### Files
-
-| Path | Purpose |
-|------|---------|
-| `ansible/site.yml` | Main playbook (3 phases) |
-| `ansible/roles/windows-provision/` | VM provisioning role |
-| `ansible/roles/windows-configure/` | Post-install configuration role |
-| `ansible/roles/windows-provision/templates/unattend.xml.j2` | Jinja2 unattend template |
-| `ansible/roles/windows-provision/files/key_injector.py` | Console keypress injection |
-| `ansible/group_vars/all.yml` | Cluster and VM configuration |
-| `ansible/inventory.yml` | Ansible inventory |
+Inside the Windows VM, install applications, configure settings, and apply patches as needed. This is your golden image baseline.
 
 ---
 
-## Golden Image Workflow
-
-Build a fully configured Windows VM, generalize it with Sysprep, then clone it to deploy identical VMs in seconds.
-
-### When to Use
-
-- Deploying multiple identical Windows VMs (dev/test environments, CI agents, training systems)
-- Pre-installing applications, patches, and configurations
-- Reducing per-VM provisioning time from ~15 minutes to ~30 seconds
-
-### Prerequisites
-
-- A working Windows VM (created via the Manual or Ansible workflows above)
-- StorageClass that supports volume cloning (`nfs-csi` does)
-- `virtctl` CLI installed
-
-### Phase 1: Build the Base VM
-
-1. **Create the VM** using the script, Ansible, or manual YAML from above.
-2. **Install Windows** via the console.
-3. **Install applications** and configure the system as desired.
-4. **Install QEMU Guest Agent** from the virtio-drivers CD-ROM (`qemu-ga-x86_64.msi`).
-
-### Phase 2: Create unattend.xml (Optional)
+### Step 9: Create unattend.xml (Optional)
 
 If you want clones to automatically configure hostname and network on first boot, create an `unattend.xml` and place it at `C:\Windows\System32\Sysprep\unattend.xml` before running Sysprep.
 
@@ -284,10 +263,12 @@ See [unattend.xml Reference](#unattendxml-reference) for the full template.
 For golden images, the key sections are:
 
 - **specialize pass** — Sets `ComputerName` (use a placeholder like `GOLDEN-CLONE`)
-- **FirstLogonCommands** — Runs `netsh` to configure static IP, gateway, DNS
+- **FirstLogonCommands** — Runs `netsh`/PowerShell to configure static IP, gateway, DNS
 - **OOBE pass** — Skips all OOBE screens, enables auto-logon
 
-### Phase 3: Run Sysprep
+---
+
+### Step 10: Run Sysprep
 
 ```powershell
 # Inside the Windows VM:
@@ -303,15 +284,17 @@ This:
 **Important:** Windows allows only 3 re-arm cycles by default. Track your Sysprep usage. To reset the counter:
 
 ```powershell
-REM HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Setup\Rearm
+# Modify registry key:
+# HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Setup\Rearm
 ```
 
-### Phase 4: Create a DataSource
+---
+
+### Step 11: Create a DataSource
 
 After Sysprep shuts down the VM, create a DataSource from the data disk PVC so clones can reference it:
 
 ```bash
-# Create the DataSource
 oc apply -f - <<EOF
 apiVersion: cdi.kubevirt.io/v1beta1
 kind: DataSource
@@ -322,11 +305,13 @@ spec:
   source:
     pvc:
       namespace: virt-windows
-      name: win11-golden-data
+      name: <vm-name>-data
 EOF
 ```
 
-### Phase 5: Clone the Golden Image
+---
+
+### Step 12: Clone the Golden Image
 
 #### Option A: Web Console
 
@@ -334,10 +319,10 @@ EOF
 2. Navigate to **VirtualMachines** → find your golden VM
 3. Click **Clone** → enter new VM name → click **Create**
 
-#### Option B: CLI
+#### Option B: CLI — Generate New Manifest
 
 ```bash
-# Create a new VM manifest that clones from the DataSource
+# Generate a new VM manifest
 ./scripts/create-vm.sh \
   --name win11-clone-01 \
   --namespace virt-windows \
@@ -358,16 +343,10 @@ oc apply -f win11-clone-01.yaml -n virt-windows
 oc start vm/win11-clone-01 -n virt-windows
 ```
 
-#### Option C: PVC Clone (manual)
+#### Option C: CLI — PVC Clone (Manual)
 
 ```bash
-# Clone the PVC directly
-oc patch pvc win11-golden-data \
-  --type='json' \
-  -p='[{"op":"add","path":"/metadata/name","value":"win11-clone-01-data"}]' \
-  -n virt-windows
-
-# Or create a new PVC with dataSource
+# Create a new DataVolume that clones from the DataSource
 oc apply -f - <<EOF
 apiVersion: cdi.kubevirt.io/v1beta1
 kind: DataVolume
@@ -391,13 +370,30 @@ spec:
 EOF
 ```
 
-### Important: MAC Address on Clones
+Then create a VM manifest referencing the cloned PVC.
 
-When cloning via CLI, **remove the `macAddress` field** from `spec.template.spec.domain.devices.interfaces`. Leaving the original MAC causes `Failed to allocate mac to the vm object` errors. Let KubeVirt auto-assign a new MAC.
+---
 
-### Versioning DataSources
+### Step 13: Verify the Clone
 
-Use versioned DataSource names to track golden image revisions:
+```bash
+# Check VMI status
+oc get vmi/win11-clone-01 -n virt-windows
+
+# Check interface IP (requires QEMU guest agent)
+oc get vmi/win11-clone-01 -o jsonpath='{.status.interfaces[0].ipAddress}'
+
+# Verify guest OS info
+oc get vmi/win11-clone-01 -o jsonpath='{.status.guestOSInfo}'
+```
+
+---
+
+### Important Notes
+
+**MAC Address on Clones:** When cloning via CLI, **remove the `macAddress` field** from `spec.template.spec.domain.devices.interfaces`. Leaving the original MAC causes `Failed to allocate mac to the vm object` errors. Let KubeVirt auto-assign a new MAC.
+
+**Versioning DataSources:** Use versioned DataSource names to track golden image revisions:
 
 ```
 windows-golden-image-v1   →  Base image, July 2026
@@ -414,7 +410,7 @@ For fully automated Windows installation without manual input. Attach as a CD-RO
 ### Quick Start
 
 ```bash
-# 1. Create the file (see template below)
+# 1. Copy and edit the template
 cp templates/autounattend.xml.example autounattend.xml
 # Edit: hostname, password, IP, Windows edition
 
@@ -437,7 +433,7 @@ spec:
         storage: 1Gi
     accessModes:
       - ReadWriteMany
-      storageClassName: nfs-csi
+    storageClassName: nfs-csi
   source:
     upload: {}
 EOF
@@ -493,18 +489,9 @@ spec:
 | Windows 11 | `viostor\w11\amd64\` | `NetKVM\w11\amd64\` |
 | Windows 10 | `viostor\w10\amd64\` | `NetKVM\w10\amd64\` |
 
-### Password Encoding
-
-The unattend.xml template in `ansible/roles/windows-provision/templates/unattend.xml.j2` uses plaintext passwords with `<PlainText>true</PlainText>` (supported on modern Windows versions). For encoded passwords:
-
-```powershell
-# On any Windows machine with Windows ADK, or via this approach:
-# The Ansible role handles this automatically.
-```
-
 ### Network Configuration
 
-With the default masquerade network, the VM gets an IP via DHCP from KubeVirt's DHCP server. To set a static IP, add a `FirstLogonCommand` with `netsh`:
+With the default masquerade network, the VM gets an IP via DHCP from KubeVirt's DHCP server. To set a static IP, add a `FirstLogonCommand`:
 
 ```xml
 <SynchronousCommand wcm:action="add">
@@ -521,6 +508,122 @@ For bridge/multus networks (like `vlan-60`), the interface name may differ. Chec
 ```bash
 oc get vmi <vm-name> -o jsonpath='{.status.interfaces[0].ipAddress}'
 ```
+
+---
+
+## Automation (still need to validate)
+
+### Script: `create-vm.sh`
+
+Generate VirtualMachine YAML for Windows guests:
+
+```bash
+./scripts/create-vm.sh \
+  --name win11-dev-01 \
+  --namespace virt-windows \
+  --template windows11 \
+  --instancetype u1.large \
+  --data-size 100Gi \
+  --network default/vlan-60 \
+  --mac 02:f2:1a:73:a8:65
+
+oc apply -f win11-dev-01.yaml
+oc start vm/win11-dev-01 -n virt-windows
+```
+
+**Options:**
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--name` | VM name (required) | — |
+| `--namespace` | Target namespace | `virt-windows` |
+| `--template` | OS template: `windows11`, `windows2025` | `windows11` |
+| `--instancetype` | KubeVirt instance type | `u1.large` |
+| `--data-size` | Data disk size | `100Gi` |
+| `--storage-class` | StorageClass name | `nfs-csi` |
+| `--network` | NetworkAttachmentDef ns/name | `default/vlan-60` |
+| `--mac` | Static MAC address | auto-generated |
+| `--run-strategy` | Run strategy | `RerunOnFailure` |
+| `--output` | Output file | `{name}.yaml` |
+| `--dry-run` | Print to stdout | — |
+
+### Ansible Playbook
+
+Fully automated pipeline: unattend.xml generation → ISO creation → VM deployment → Windows installation → post-install configuration.
+
+**Architecture:**
+
+```
+Phase 1: PROVISION (localhost)
+  1. Generate unattend.xml from Jinja2 template
+  2. Create ISO with podman + genisoimage
+  3. Upload ISO to cluster as DataVolume
+  4. Clone Windows ISO DataSource
+  5. Create blank data disk DataVolume
+  6. Create VirtualMachine with all disks attached
+  7. Start VM + inject boot keypress
+
+Phase 2: WAIT (localhost)
+  8.  Wait for VMI to be Running
+  9.  Get VM IP address
+  10. Wait for WinRM port 5985
+
+Phase 3: CONFIGURE (WinRM → Windows VM)
+  11. Verify Windows version
+  12. Install virtio drivers
+  13. Run Windows Update
+  14. Reboot if needed
+  15. Configure power plan, disable hibernation
+```
+
+**Prerequisites:**
+
+- Ansible 2.15+ with `ansible.windows`, `kubernetes.core`, `community.general`
+- `oc` CLI with access to OpenShift cluster
+- `podman` for ISO creation
+- KubeVirt + CDI installed on cluster
+
+**Configuration:**
+
+Edit `ansible/group_vars/all.yml`:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `vm_name` | `win11-auto-01` | VM name |
+| `vm_instancetype` | `u1.large` | Instance type |
+| `vm_preference` | `windows.11.virtio` | KubeVirt preference |
+| `vm_data_size` | `100Gi` | Data disk size |
+| `vm_network` | `default/vlan-60` | Network attachment |
+| `vm_mac` | `02:f2:1a:73:a8:66` | MAC address (unique per VM) |
+| `windows_admin_password` | `P@ssw0rd1234!` | Administrator password |
+| `windows_computer_name` | derived from vm_name | Hostname |
+
+**Usage:**
+
+```bash
+cd ansible
+
+# Full pipeline (provision + wait + configure)
+ansible-playbook site.yml
+
+# Provision only
+ansible-playbook site.yml --tags provision
+
+# Configure only (after VM is running)
+ansible-playbook site.yml --tags configure
+```
+
+**Files:**
+
+| Path | Purpose |
+|------|---------|
+| `ansible/site.yml` | Main playbook (3 phases) |
+| `ansible/roles/windows-provision/` | VM provisioning role |
+| `ansible/roles/windows-configure/` | Post-install configuration role |
+| `ansible/roles/windows-provision/templates/unattend.xml.j2` | Jinja2 unattend template |
+| `ansible/roles/windows-provision/files/key_injector.py` | Console keypress injection |
+| `ansible/group_vars/all.yml` | Cluster and VM configuration |
+| `ansible/inventory.yml` | Ansible inventory |
 
 ---
 
