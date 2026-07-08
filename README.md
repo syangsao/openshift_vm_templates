@@ -56,7 +56,7 @@ The OpenShift Virtualization containerDisk for VirtIO may be outdated. Download 
 # Replace the URL with the latest version from:
 # https://access.redhat.com/downloads/content/virtio-win
 curl -L -o virtio-win.rpm \
-  "https://access.redhat.com/downloads/content/virtio-win/1.9.57-0.el10_2/noarch/fd431d51/package"
+  "https://access.cdn.redhat.com/content/origin/rpms/virtio-win/1.9.57/0.el10_2/fd431d51/virtio-win-1.9.57-0.el10_2.noarch.rpm"
 
 # 2. Extract the RPM
 rpm2cpio virtio-win.rpm | cpio -idmv
