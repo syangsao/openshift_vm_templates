@@ -5,6 +5,7 @@ Windows VirtualMachine templates, provisioning scripts, and automation for OpenS
 ## Contents
 
 - [Prerequisites](#prerequisites)
+  - [Download and Upload VirtIO Drivers](#download-and-upload-virtio-drivers) — RPM → ISO → cluster upload
 - [WIM-to-Disk: Import Custom Windows Images](#wim-to-disk-import-custom-windows-images) — Convert a .wim to a bootable disk, upload, deploy
 - [Manual Golden Image Workflow](#manual-golden-image-workflow) — Step-by-step: build, generalize, clone
 - [unattend.xml Reference](#unattendxml-reference) — Automated Windows installation
@@ -42,7 +43,82 @@ Each VM uses a three-disk pattern:
 
 1. **Boot volume** — Cloned from the OS DataSource (30Gi). Attached as CD-ROM during install.
 2. **Data volume** — Blank disk (configurable size). The guest OS is installed here.
-3. **Virtio drivers** — containerDisk. Provides network, storage, and balloon drivers.
+3. **Virtio drivers** — CD-ROM ISO. Provides network, storage, and balloon drivers.
+
+---
+
+### Download and Upload VirtIO Drivers
+
+The OpenShift Virtualization containerDisk for VirtIO may be outdated. Download the latest ISO from Red Hat and upload it to the cluster.
+
+```bash
+# 1. Download the latest RPM from Red Hat
+curl -L -o virtio-win.rpm \
+  "https://access.cdn.redhat.com/content/origin/rpms/virtio-win/1.9.57/0.el10_2/fd431d51/virtio-win-1.9.57-0.el10_2.noarch.rpm"
+
+# 2. Extract the RPM
+rpm2cpio virtio-win.rpm | cpio -idmv
+
+# 3. Locate the ISO (typically in usr/share/virtio-win/)
+ls -lh usr/share/virtio-win/virtio-win-*.iso
+
+# 4. Copy to a working directory
+cp usr/share/virtio-win/virtio-win-1.9.57.iso virtio-win.iso
+```
+
+**Upload via Web Console:**
+
+1. Navigate to **Virtualization** → **Virtual Machines** → Your-VM → **Configuration** → **Storage**
+2. Click **Add** → **CD-ROM**
+3. Name: `cd-rom-virtio-win-1-9-57`
+4. Select **"Select or upload a new ISO file to the cluster"**
+5. Check **"Upload a new ISO file to the cluster"**
+6. Click **Upload** and select the extracted ISO
+7. Wait for upload to complete
+8. **Reboot the VM**
+
+**Note:** This same ISO can be attached to other VMs without re-uploading.
+
+**Upload via CLI:**
+
+```bash
+# Create a DataVolume for the ISO
+oc apply -f - <<EOF
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: virtio-win-iso
+  namespace: virt-windows
+  annotations:
+    cdi.kubevirt.io/storage.bind.immediate.requested: "true"
+spec:
+  storage:
+    resources:
+      requests:
+        storage: 1Gi
+    accessModes:
+      - ReadWriteMany
+    storageClassName: nfs-csi
+  source:
+    upload: {}
+EOF
+
+# Upload the ISO
+virtctl image-upload dv virtio-win-iso \
+  --size=1G \
+  --image-path=virtio-win.iso \
+  --insecure \
+  --force-bind \
+  -n virt-windows
+```
+
+**Inside the guest OS:** Open the ISO and run the driver installer:
+
+```
+D:\virtio-win-gt-x64.msi
+```
+
+This installs all VirtIO drivers (NetKVM, viostor, balloon, qxl, etc.) in one step.
 
 ---
 
