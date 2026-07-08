@@ -5,6 +5,7 @@ Windows VirtualMachine templates, provisioning scripts, and automation for OpenS
 ## Contents
 
 - [Prerequisites](#prerequisites)
+- [WIM-to-Disk: Import Custom Windows Images](#wim-to-disk-import-custom-windows-images) — Convert a .wim to a bootable disk, upload, deploy
 - [Manual Golden Image Workflow](#manual-golden-image-workflow) — Step-by-step: build, generalize, clone
 - [unattend.xml Reference](#unattendxml-reference) — Automated Windows installation
 - [Automation (still need to validate)](#automation-still-need-to-validate) — Script and Ansible playbook
@@ -42,6 +43,172 @@ Each VM uses a three-disk pattern:
 1. **Boot volume** — Cloned from the OS DataSource (30Gi). Attached as CD-ROM during install.
 2. **Data volume** — Blank disk (configurable size). The guest OS is installed here.
 3. **Virtio drivers** — containerDisk. Provides network, storage, and balloon drivers.
+
+---
+
+## WIM-to-Disk: Import Custom Windows Images
+
+Skip the ISO install entirely. Convert a `.wim` file (from a Windows ISO or custom capture) into a bootable disk image, upload it to OpenShift, and deploy VMs directly.
+
+**When to use:** You have a custom `.wim` (e.g., from `DISM`, `imagex`, or a vendor image) and want to deploy it without going through the interactive Windows Setup.
+
+### Step 1: Prepare the WIM File
+
+Extract the `.wim` from your Windows ISO or locate your custom image:
+
+```bash
+# Mount the ISO
+mkdir -p /tmp/windows-iso
+mount -o loop Windows11.iso /tmp/windows-iso
+
+# Locate the WIM (usually in sources/install.wim or install.esd)
+ls -lh /tmp/windows-iso/sources/install.wim
+
+# List available images in the WIM
+wiminfo /tmp/windows-iso/sources/install.wim
+
+# Example output:
+# Image Count: 4
+# Image 1: Windows 11 Home
+# Image 2: Windows 11 Home N
+# Image 3: Windows 11 Pro
+# Image 4: Windows 11 Pro N
+```
+
+Note the image index or name you want to deploy.
+
+### Step 2: Create a Raw Disk Image
+
+Create a blank raw disk with enough space for the WIM content:
+
+```bash
+# Create a 64Gi raw disk image
+dd if=/dev/zero of=windows-disk.img bs=1M count=0 seek=65536
+
+# Partition the disk (EFI + MSR + primary NTFS)
+parted --script windows-disk.img mklabel gpt
+parted --script windows-disk.img mkpart primary fat32 1MiB 1011MiB
+parted --script windows-disk.img set 1 esp on
+parted --script windows-disk.img mkpart primary ntfs 1011MiB 1275MiB
+parted --script windows-disk.img mkpart primary ntfs 1275MiB 100%
+
+# Loop-mount the partitions
+LOOP=$(losetup --find --show --partscan windows-disk.img)
+echo "Loop device: $LOOP"
+
+# Format partitions
+mkfs.vfat -F 32 ${LOOP}p1    # EFI
+mkfs.ntfs -f ${LOOP}p2       # MSR (leave mostly empty)
+mkfs.ntfs -f ${LOOP}p3       # Windows root
+
+# Mount the NTFS partition
+mkdir -p /mnt/windows
+mount -t ntfs ${LOOP}p3 /mnt/windows
+```
+
+### Step 3: Apply the WIM to the Disk
+
+```bash
+# Apply the WIM image to the mounted NTFS partition
+# Replace '3' with your desired image index
+wimapply /tmp/windows-iso/sources/install.wim 3 /mnt/windows
+
+# Unmount
+umount /mnt/windows
+rmdir /mnt/windows
+
+# Detach loop device
+losetup -d $LOOP
+```
+
+### Step 4: Convert to QCOW2 (Optional but Recommended)
+
+QCOW2 provides thin provisioning and better performance with KubeVirt:
+
+```bash
+qemu-img convert -f raw -O qcow2 windows-disk.img windows-disk.qcow2
+
+# Verify
+qemu-img info windows-disk.qcow2
+```
+
+### Step 5: Upload to OpenShift as a DataVolume
+
+```bash
+# Create the DataVolume manifest
+cat > windows-wim-dv.yaml <<EOF
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: windows-wim-image
+  namespace: virt-windows
+  annotations:
+    cdi.kubevirt.io/storage.bind.immediate.requested: "true"
+spec:
+  storage:
+    resources:
+      requests:
+        storage: 64Gi
+    accessModes:
+      - ReadWriteOnce
+    storageClassName: nfs-csi
+  source:
+    upload: {}
+EOF
+
+oc apply -f windows-wim-dv.yaml
+
+# Upload the image
+virtctl image-upload dv windows-wim-image \
+  --size=64G \
+  --image-path=windows-disk.qcow2 \
+  --insecure \
+  --force-bind \
+  -n virt-windows
+
+# Wait for upload to complete
+oc get datavolume windows-wim-image -n virt-windows -w
+# PHASE should be "Succeeded"
+```
+
+### Step 6: Create a DataSource
+
+```bash
+oc apply -f - <<EOF
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataSource
+metadata:
+  name: windows-wim-custom-v1
+  namespace: openshift-virtualization-os-images
+spec:
+  source:
+    pvc:
+      namespace: virt-windows
+      name: windows-wim-image
+EOF
+```
+
+### Step 7: Deploy VMs from the WIM DataSource
+
+Clone the template and update the data disk to source from the WIM DataSource instead of a blank volume:
+
+```yaml
+# In the dataVolumeTemplates section, change:
+#   source:
+#     blank: {}
+# To:
+sourceRef:
+  kind: DataSource
+  name: windows-wim-custom-v1
+  namespace: openshift-virtualization-os-images
+
+# Also change the disk name from rootdisk to match your DV:
+- dataVolume:
+    name: <vm-name>-data
+  name: rootdisk
+```
+
+The VM boots directly from the WIM-deployed disk — no ISO install required.
 
 ---
 
