@@ -6,6 +6,7 @@ Windows VirtualMachine templates, provisioning scripts, and automation for OpenS
 
 - [Prerequisites](#prerequisites)
   - [Download and Upload VirtIO Drivers](#download-and-upload-virtio-drivers) — RPM → ISO → cluster upload
+  - [Download and Upload Windows Server 2025 ISO](#download-and-upload-windows-server-2025-iso) — VLSC → ISO → DataSource
 - [WIM-to-Disk: Import Custom Windows Images](#wim-to-disk-import-custom-windows-images) — Convert a .wim to a bootable disk, upload, deploy
 - [Manual Golden Image Workflow](#manual-golden-image-workflow) — Step-by-step: build, generalize, clone
 - [unattend.xml Reference](#unattendxml-reference) — Automated Windows installation
@@ -23,8 +24,9 @@ Windows VirtualMachine templates, provisioning scripts, and automation for OpenS
 Verify the cluster has the required resources:
 
 ```bash
-# DataSource (Windows ISO)
+# DataSources (Windows ISOs)
 oc get datasource windows-11-25h2-amd64 -n openshift-virtualization-os-images
+oc get datasource windows-server-2025 -n openshift-virtualization-os-images
 
 # Instance type and preference
 oc get virtualmachineclusterinstancetype u1.large
@@ -132,6 +134,90 @@ D:\virtio-win-gt-x64.msi
 ```
 
 This installs all VirtIO drivers (NetKVM, viostor, balloon, qxl, etc.) in one step.
+
+---
+
+### Download and Upload Windows Server 2025 ISO
+
+Download the Windows Server 2025 ISO from the Microsoft Volume Licensing portal, upload it to the cluster, and create a DataSource.
+
+**Download:**
+
+1. Go to [Microsoft Volume Licensing Service Center](https://www.microsoft.com/licensing/servicecenter)
+2. Navigate to **Products and Services** → **Windows Server 2025**
+3. Download the **Windows Server 2025 Datacenter** ISO (English, x64)
+4. Copy the ISO to your workstation
+
+**Upload via CLI:**
+
+```bash
+# Create a DataVolume for the ISO
+oc apply -f - <<EOF
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: windows-server-2025-iso
+  namespace: openshift-virtualization-os-images
+  annotations:
+    cdi.kubevirt.io/storage.bind.immediate.requested: "true"
+spec:
+  storage:
+    resources:
+      requests:
+        storage: 6Gi
+    accessModes:
+      - ReadWriteMany
+    storageClassName: nfs-csi
+  source:
+    upload: {}
+EOF
+
+# Upload the ISO
+virtctl image-upload dv windows-server-2025-iso \
+  --size=6G \
+  --image-path=Windows_Server_2025.iso \
+  --insecure \
+  --force-bind \
+  -n openshift-virtualization-os-images
+
+# Wait for upload to complete
+oc get datavolume windows-server-2025-iso -n openshift-virtualization-os-images -w
+# PHASE should be "Succeeded"
+```
+
+**Create a DataSource:**
+
+```bash
+oc apply -f - <<EOF
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataSource
+metadata:
+  name: windows-server-2025
+  namespace: openshift-virtualization-os-images
+spec:
+  source:
+    pvc:
+      namespace: openshift-virtualization-os-images
+      name: windows-server-2025-iso
+EOF
+```
+
+**Verify:**
+
+```bash
+oc get datasource windows-server-2025 -n openshift-virtualization-os-images
+```
+
+When creating the VM manifest, reference this DataSource in the boot volume:
+
+```yaml
+sourceRef:
+  kind: DataSource
+  name: windows-server-2025
+  namespace: openshift-virtualization-os-images
+```
+
+Also update the VirtIO driver path during Windows Setup to `viostor\ws2025\amd64\` instead of `viostor\w11\amd64\`.
 
 ---
 
@@ -497,7 +583,7 @@ oc virt-launcher-spice-url <vm-name> -n virt-windows
 1. VM boots from Windows ISO (bootOrder 2, CD-ROM)
 2. Blank data disk (bootOrder 1) is the installation target
 3. If Windows does not detect the disk, load the virtio storage driver from `windows-drivers-disk`:
-   - Click **Load Driver** → browse to `viostor\w11\amd64\` (or your Windows version) → select driver
+   - Click **Load Driver** → browse to `viostor\w11\amd64\` (Windows 11) or `viostor\ws2025\amd64\` (Server 2025) → select driver
 4. Complete the Windows installation
 5. After reboot, install remaining virtio drivers from the drivers CD-ROM:
    - Network driver (`NetKVM`)
