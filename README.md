@@ -74,114 +74,36 @@ echo "MAC:    $VM_MAC"
 
 ---
 
-### Step 2: Create the VirtualMachine Manifest
+### Step 2: Clone the Template and Fill in Variables
 
-Create the YAML by hand or use `templates/windows11-vm.yaml` as a reference. Replace `<vm-name>`, UUIDs, and MAC with your values:
+Clone the reference template and replace the `{{vm.*}}` placeholders:
 
-```yaml
-apiVersion: kubevirt.io/v1
-kind: VirtualMachine
-metadata:
-  name: <vm-name>
-  namespace: virt-windows
-spec:
-  instancetype:
-    name: u1.large
-  preference:
-    kind: VirtualMachineClusterPreference
-    name: windows.11.virtio
-  runStrategy: RerunOnFailure
+```bash
+cp templates/windows11-vm.yaml <vm-name>.yaml
 
-  dataVolumeTemplates:
-    # Boot volume — cloned from OS DataSource
-    - metadata:
-        name: <vm-name>-boot
-      spec:
-        sourceRef:
-          kind: DataSource
-          name: windows-11-25h2-amd64
-          namespace: openshift-virtualization-os-images
-        storage:
-          resources:
-            requests:
-              storage: 30Gi
-          storageClassName: nfs-csi
-
-    # Data disk — blank, for guest OS installation
-    - metadata:
-        name: <vm-name>-data
-      spec:
-        source:
-          blank: {}
-        storage:
-          resources:
-            requests:
-              storage: 100Gi
-          storageClassName: nfs-csi
-
-  template:
-    metadata:
-      annotations:
-        kubevirt.io/pci-topology-version: v3
-      labels:
-        network.kubevirt.io/headlessService: headless
-    spec:
-      architecture: amd64
-      subdomain: headless
-
-      domain:
-        devices:
-          autoattachPodInterface: false
-          disks:
-            - bootOrder: 1
-              name: rootdisk
-            - bootOrder: 2
-              cdrom:
-                bus: sata
-              name: cdrom-iso
-            - cdrom:
-                bus: sata
-              name: windows-drivers-disk
-          interfaces:
-            - bridge: {}
-              macAddress: <vm-mac>
-              model: virtio
-              name: default
-              state: up
-
-        firmware:
-          uuid: <vm-uuid>
-          serial: <vm-serial>
-
-        machine:
-          type: pc-q35-rhel9.8.0
-
-      networks:
-        - multus:
-            networkName: default/vlan-60
-          name: default
-
-      volumes:
-        - dataVolume:
-            name: <vm-name>-boot
-          name: cdrom-iso
-        - dataVolume:
-            name: <vm-name>-data
-          name: rootdisk
-        - containerDisk:
-            image: registry.redhat.io/container-native-virtualization/virtio-win-rhel9@sha256:7e06e1f52a434d4602657c920144504fbaed955d0998535bdf345716355ce83a
-          name: windows-drivers-disk
+# Replace all placeholders:
+# {{vm.name}}        → your VM name (e.g. win11-golden)
+# {{vm.namespace}}    → target namespace (e.g. virt-windows)
+# {{vm.instancetype}} → instance type (e.g. u1.large)
+# {{vm.data_size}}    → data disk size (e.g. 100Gi)
+# {{vm.storage_class}}→ StorageClass (e.g. nfs-csi)
+# {{vm.network_ns}}   → NetworkAttachmentDef namespace (e.g. default)
+# {{vm.network_name}} → NetworkAttachmentDef name (e.g. vlan-60)
+# {{vm.mac}}          → MAC address from Step 1 (optional — omit for auto-assign)
+# {{vm.uuid}}         → firmware UUID from Step 1
+# {{vm.serial}}       → firmware serial from Step 1
 ```
 
 **Key fields to customize:**
 
-| Field | Purpose | Example |
+| Placeholder | Purpose | Example |
 |---|---|---|
-| `metadata.name` | VM name | `win11-golden` |
-| `spec.dataVolumeTemplates[*].name` | Must match `<vm-name>-boot` and `<vm-name>-data` | `win11-golden-boot` |
-| `firmware.uuid` / `firmware.serial` | Unique per VM | Output from Step 1 |
-| `interfaces[0].macAddress` | Static MAC (optional) | `02:f2:1a:73:a8:65` |
-| `networks[0].multus.networkName` | NetworkAttachmentDef ref | `default/vlan-60` |
+| `{{vm.name}}` | VM name (appears 3 times: metadata + 2 PVCs) | `win11-golden` |
+| `{{vm.uuid}}` / `{{vm.serial}}` | Unique per VM | Output from Step 1 |
+| `{{vm.mac}}` | Static MAC (optional) | `02:f2:1a:73:a8:65` |
+| `{{vm.network_ns}}/{{vm.network_name}}` | NetworkAttachmentDef ref | `default/vlan-60` |
+| `{{vm.storage_class}}` | StorageClass for both volumes | `nfs-csi` |
+| `{{vm.data_size}}` | Blank data disk size | `100Gi` |
 
 ---
 
