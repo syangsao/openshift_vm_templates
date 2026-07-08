@@ -1,0 +1,290 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  autounattend.xml — Fully automated Windows installation for OpenShift Virtualization
+
+  Usage:
+    1. Copy this file and edit the values marked with [EDIT]
+    2. Build ISO: genisoimage -o autounattend.iso -J -l -no-emul-boot autounattend.xml
+    3. Upload as DataVolume: virtctl image-upload dv autounattend-iso --size=1G --image-path=autounattend.iso --insecure --force-bind -n <namespace>
+    4. Attach as CD-ROM to your VM manifest (see README.md)
+
+  IMPORTANT: The file MUST be named autounattend.xml (not unattend.xml) for Windows Setup to find it automatically.
+
+  Reference: https://learn.microsoft.com/windows-hardware/manufacture/desktop/update-windows-settings-and-scripts-create-your-own-answer-file-sxs
+-->
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+
+  <!-- ========================================================================
+       Windows PE phase — runs during initial boot from Windows ISO
+       ======================================================================== -->
+  <settings pass="windowsPE">
+    <component name="Microsoft-Windows-International-Core-WinPE"
+      processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35"
+      language="neutral" versionScope="nonSxS">
+      <SetupUILanguage>
+        <UILanguage>en-US</UILanguage>
+      </SetupUILanguage>
+      <InputLocale>en-US</InputLocale>
+      <SystemLocale>en-US</SystemLocale>
+      <UILanguage>en-US</UILanguage>
+      <UserLocale>en-US</UserLocale>
+    </component>
+
+    <component name="Microsoft-Windows-Setup"
+      processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35"
+      language="neutral" versionScope="nonSxS">
+
+      <!-- Product key — [EDIT]: Replace with your key or leave empty for KMS/MAK -->
+      <UserData>
+        <AcceptEula>true</AcceptEula>
+        <ProductKey>
+          <Key></Key>
+        </ProductKey>
+      </UserData>
+
+      <!-- Windows edition to install — [EDIT]: Match your ISO -->
+      <ImageInstall>
+        <OSImage>
+          <WillShowUI>OnError</WillShowUI>
+          <InstallFrom>
+            <MetaData wcm:action="add">
+              <Key>/IMAGE/NAME</Key>
+              <!-- Windows 11 Pro: -->
+              <Value>Windows 11 Pro</Value>
+              <!-- Windows Server 2022 Standard: -->
+              <!-- <Value>Windows Server 2022 SERVERSTANDARD</Value> -->
+              <!-- Windows Server 2025 Datacenter: -->
+              <!-- <Value>Windows Server 2025 SERVERDATACENTER</Value> -->
+            </MetaData>
+          </InstallFrom>
+        </OSImage>
+      </ImageInstall>
+
+      <!-- Disk partitioning — installs to Disk 0 (the blank data disk) -->
+      <DiskConfiguration>
+        <WillShowUI>OnError</WillShowUI>
+        <Disk wcm:action="add">
+          <DiskID>0</DiskID>
+          <WillWipeDisk>true</WillWipeDisk>
+          <CreatePartitions>
+            <CreatePartition wcm:action="add">
+              <Order>1</Order>
+              <Type>EFI</Type>
+              <Size>128</Size>
+            </CreatePartition>
+            <CreatePartition wcm:action="add">
+              <Order>2</Order>
+              <Type>MSR</Type>
+              <Size>128</Size>
+            </CreatePartition>
+            <CreatePartition wcm:action="add">
+              <Order>3</Order>
+              <Type>Primary</Type>
+              <Extend>true</Extend>
+            </CreatePartition>
+          </CreatePartitions>
+          <ModifyPartitions>
+            <ModifyPartition wcm:action="add">
+              <Order>1</Order>
+              <PartitionID>1</PartitionID>
+              <Format>FAT32</Format>
+            </ModifyPartition>
+            <ModifyPartition wcm:action="add">
+              <Order>2</Order>
+              <PartitionID>2</PartitionID>
+            </ModifyPartition>
+            <ModifyPartition wcm:action="add">
+              <Order>3</Order>
+              <PartitionID>3</PartitionID>
+              <Letter>C</Letter>
+              <Format>NTFS</Format>
+              <Label>Windows</Label>
+            </ModifyPartition>
+          </ModifyPartitions>
+        </Disk>
+      </DiskConfiguration>
+
+      <!-- Load virtio storage driver so Setup can see the disk -->
+      <DriverConfiguration>
+        <WillShowUI>Never</WillShowUI>
+        <Path>
+          <Path>D:\amd64\w11\</Path>
+          <Path>E:\amd64\w11\</Path>
+          <Path>F:\amd64\w11\</Path>
+          <Path>G:\amd64\w11\</Path>
+          <Path>H:\amd64\w11\</Path>
+          <Path>I:\amd64\w11\</Path>
+          <Path>J:\amd64\w11\</Path>
+          <Path>K:\amd64\w11\</Path>
+          <Path>L:\amd64\w11\</Path>
+          <Path>M:\amd64\w11\</Path>
+          <Path>N:\amd64\w11\</Path>
+          <Path>O:\amd64\w11\</Path>
+          <Path>P:\amd64\w11\</Path>
+          <Path>Q:\amd64\w11\</Path>
+          <Path>R:\amd64\w11\</Path>
+          <Path>S:\amd64\w11\</Path>
+          <Path>T:\amd64\w11\</Path>
+          <Path>U:\amd64\w11\</Path>
+          <Path>V:\amd64\w11\</Path>
+          <Path>W:\amd64\w11\</Path>
+          <Path>X:\amd64\w11\</Path>
+          <Path>Y:\amd64\w11\</Path>
+          <Path>Z:\amd64\w11\</Path>
+        </Path>
+      </DriverConfiguration>
+
+      <EnableFirewall>false</EnableFirewall>
+      <EnableNetwork>true</EnableNetwork>
+    </component>
+  </settings>
+
+  <!-- ========================================================================
+       Specialize phase — runs on first boot before OOBE
+       ======================================================================== -->
+  <settings pass="specialize">
+    <component name="Microsoft-Windows-Shell-Setup"
+      processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35"
+      language="neutral" versionScope="nonSxS">
+      <!-- [EDIT]: Set your desired hostname -->
+      <ComputerName>WIN-VM-01</ComputerName>
+      <ProductKey></ProductKey>
+      <TimeZone>UTC</TimeZone>
+      <RegisteredOrganization>My Organization</RegisteredOrganization>
+      <RegisteredOwner>Administrator</RegisteredOwner>
+    </component>
+
+    <!-- Enable Remote Desktop -->
+    <component name="Microsoft-Windows-TerminalServices-LocalSessionManager"
+      processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35"
+      language="neutral" versionScope="nonSxS">
+      <fDenyTSConnections>false</fDenyTSConnections>
+    </component>
+
+    <component name="Microsoft-Windows-TerminalServices-RDP-WinStationExtensions"
+      processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35"
+      language="neutral" versionScope="nonSxS">
+      <UserAuthentication>0</UserAuthentication>
+    </component>
+
+    <!-- Open firewall for RDP and WinRM -->
+    <component name="Networking-MPSSVC-Svc"
+      processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35"
+      language="neutral" versionScope="nonSxS">
+      <FirewallGroups>
+        <FirewallGroup wcm:action="add">
+          <Active>true</Active>
+          <Profile>all</Profile>
+          <Group>Remote Desktop</Group>
+        </FirewallGroup>
+        <FirewallGroup wcm:action="add">
+          <Active>true</Active>
+          <Profile>all</Profile>
+          <Group>Windows Remote Management (HTTP-In)</Group>
+        </FirewallGroup>
+      </FirewallGroups>
+    </component>
+
+    <!-- Disable Server Manager at logon (Server editions) -->
+    <component name="Microsoft-Windows-ServerManager-SvrMgrNc"
+      processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35"
+      language="neutral" versionScope="nonSxS">
+      <DoNotOpenServerManagerAtLogon>true</DoNotOpenServerManagerAtLogon>
+    </component>
+  </settings>
+
+  <!-- ========================================================================
+       OOBE phase — out-of-box experience (fully automated)
+       ======================================================================== -->
+  <settings pass="oobeSystem">
+    <component name="Microsoft-Windows-Shell-Setup"
+      processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35"
+      language="neutral" versionScope="nonSxS">
+
+      <!-- [EDIT]: Administrator password (plaintext supported on modern Windows) -->
+      <UserAccounts>
+        <LocalAccounts>
+          <LocalAccount wcm:action="add">
+            <Name>Administrator</Name>
+            <Group>Administrators</Group>
+            <Password>
+              <Value>P@ssw0rd1234!</Value>
+              <PlainText>true</PlainText>
+            </Password>
+          </LocalAccount>
+        </LocalAccounts>
+        <AdministratorPassword>
+          <Value>P@ssw0rd1234!</Value>
+          <PlainText>true</PlainText>
+        </AdministratorPassword>
+      </UserAccounts>
+
+      <AutoLogon>
+        <Username>Administrator</Username>
+        <Enabled>true</Enabled>
+        <LogonCount>3</LogonCount>
+        <Password>
+          <Value>P@ssw0rd1234!</Value>
+          <PlainText>true</PlainText>
+        </Password>
+      </AutoLogon>
+
+      <FirstLogonCommands>
+        <!-- 1. Enable WinRM for Ansible/remote management -->
+        <SynchronousCommand wcm:action="add">
+          <Order>1</Order>
+          <CommandLine>cmd /c powershell -NoProfile -Command "Set-Item WSMan:\localhost\Service\AllowUnencrypted $true; Set-Item WSMan:\localhost\Service\Auth\Basic $true; Enable-PSRemoting -Force"</CommandLine>
+          <Description>Enable WinRM</Description>
+        </SynchronousCommand>
+
+        <!-- 2. Install virtio drivers from containerDisk CD-ROM -->
+        <SynchronousCommand wcm:action="add">
+          <Order>2</Order>
+          <CommandLine>cmd /c powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-Volume | Where-Object {$_.DriveType -eq 'CD-ROM'} | ForEach-Object {$l=$_.DriveLetter; $s=Get-ChildItem `"$l:\`" -Filter 'virtio-win-gt-x64.exe' -ErrorAction SilentlyContinue; if($s){&amp; $s.FullName '/S'}}"</CommandLine>
+          <Description>Install Virtio Drivers</Description>
+        </SynchronousCommand>
+
+        <!-- 3. [OPTIONAL] Configure static IP — [EDIT]: Remove or customize for your network -->
+        <!--
+        <SynchronousCommand wcm:action="add">
+          <Order>3</Order>
+          <CommandLine>powershell -Command "New-NetIPAddress -InterfaceAlias 'Ethernet' -IPAddress 10.0.0.100 -PrefixLength 24 -DefaultGateway 10.0.0.1; Set-DnsClientServerAddress -InterfaceAlias 'Ethernet' -ServerAddresses 10.0.0.1, 8.8.8.8"</CommandLine>
+          <Description>Configure Static IP</Description>
+        </SynchronousCommand>
+        -->
+
+        <!-- 4. Start Windows Update in background -->
+        <SynchronousCommand wcm:action="add">
+          <Order>4</Order>
+          <CommandLine>cmd /c powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process powershell -ArgumentList '-NoProfile -ExecutionPolicy Bypass -Command &quot;Start-Sleep 180; $session=New-Object -ComObject Microsoft.Update.Session; $searcher=$session.CreateUpdateSearcher(); $result=$searcher.Search(&apos;IsInstalled=0&apos;); if($result.Updates.Count -gt 0){$coll=New-Object -ComObject Microsoft.Update.UpdateColl; $result.Updates|%{$coll.Add($_)}; $installer=New-Object -ComObject Microsoft.Update.Installer; $installer.Updates=$coll; $installer.Install()}&quot;' -WindowStyle Hidden"</CommandLine>
+          <Description>Run Windows Update</Description>
+        </SynchronousCommand>
+      </FirstLogonCommands>
+
+      <!-- Skip all OOBE screens -->
+      <OOBE>
+        <HideEULAPage>true</HideEULAPage>
+        <HideLocalAccountScreen>true</HideLocalAccountScreen>
+        <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
+        <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+        <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+        <NetworkLocation>Work</NetworkLocation>
+        <ProtectYourPC>3</ProtectYourPC>
+        <SkipUserOOBE>true</SkipUserOOBE>
+        <SkipMachineOOBE>true</SkipMachineOOBE>
+      </OOBE>
+
+      <TimeZone>UTC</TimeZone>
+    </component>
+
+    <component name="Microsoft-Windows-International-Core"
+      processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35"
+      language="neutral" versionScope="nonSxS">
+      <InputLocale>en-US</InputLocale>
+      <SystemLocale>en-US</SystemLocale>
+      <UserLocale>en-US</UserLocale>
+      <UILanguage>en-US</UILanguage>
+    </component>
+  </settings>
+
+</unattend>
