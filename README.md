@@ -45,6 +45,15 @@ Each VM uses a three-disk pattern:
 2. **Data volume** — Blank disk (configurable size). The guest OS is installed here.
 3. **Virtio drivers** — CD-ROM ISO. Provides network, storage, and balloon drivers.
 
+**Namespace strategy:**
+
+| Namespace | Purpose |
+|---|---|
+| `openshift-virtualization-os-images` | Shared ISOs, DataSources, golden images. Cluster-wide. |
+| `virt-windows` (or any project) | VMs, DataVolumes, PVCs. Project-scoped. |
+
+Upload all reusable images to `openshift-virtualization-os-images` so any project can reference them via DataSource without re-uploading.
+
 ---
 
 ### Download and Upload VirtIO Drivers
@@ -83,6 +92,8 @@ cp usr/share/virtio-win/virtio-win-1.9.57.iso virtio-win.iso
 
 **Upload via CLI:**
 
+Upload ISOs to `openshift-virtualization-os-images` so they are available cluster-wide. Any project can reference them without re-uploading.
+
 ```bash
 # Create a DataVolume for the ISO
 oc apply -f - <<EOF
@@ -90,7 +101,7 @@ apiVersion: cdi.kubevirt.io/v1beta1
 kind: DataVolume
 metadata:
   name: virtio-win-iso
-  namespace: virt-windows
+  namespace: openshift-virtualization-os-images
   annotations:
     cdi.kubevirt.io/storage.bind.immediate.requested: "true"
 spec:
@@ -111,7 +122,7 @@ virtctl image-upload dv virtio-win-iso \
   --image-path=virtio-win.iso \
   --insecure \
   --force-bind \
-  -n virt-windows
+  -n openshift-virtualization-os-images
 ```
 
 **Inside the guest OS:** Open the ISO and run the driver installer:
@@ -212,6 +223,8 @@ qemu-img info windows-disk.qcow2
 
 ### Step 5: Upload to OpenShift as a DataVolume
 
+Upload to `openshift-virtualization-os-images` so the image is available cluster-wide:
+
 ```bash
 # Create the DataVolume manifest
 cat > windows-wim-dv.yaml <<EOF
@@ -219,7 +232,7 @@ apiVersion: cdi.kubevirt.io/v1beta1
 kind: DataVolume
 metadata:
   name: windows-wim-image
-  namespace: virt-windows
+  namespace: openshift-virtualization-os-images
   annotations:
     cdi.kubevirt.io/storage.bind.immediate.requested: "true"
 spec:
@@ -242,10 +255,10 @@ virtctl image-upload dv windows-wim-image \
   --image-path=windows-disk.qcow2 \
   --insecure \
   --force-bind \
-  -n virt-windows
+  -n openshift-virtualization-os-images
 
 # Wait for upload to complete
-oc get datavolume windows-wim-image -n virt-windows -w
+oc get datavolume windows-wim-image -n openshift-virtualization-os-images -w
 # PHASE should be "Succeeded"
 ```
 
@@ -261,7 +274,7 @@ metadata:
 spec:
   source:
     pvc:
-      namespace: virt-windows
+      namespace: openshift-virtualization-os-images
       name: windows-wim-image
 EOF
 ```
