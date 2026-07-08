@@ -185,7 +185,7 @@ spec:
   storage:
     resources:
       requests:
-        storage: 6Gi
+        storage: 10Gi
     accessModes:
       - ReadWriteMany
     storageClassName: nfs-csi
@@ -195,7 +195,7 @@ EOF
 
 # Upload the ISO
 virtctl image-upload dv windows-server-2025-iso \
-  --size=6G \
+  --size=8G \
   --image-path=Windows_Server_2025.iso \
   --insecure \
   --force-bind \
