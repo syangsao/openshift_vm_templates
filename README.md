@@ -667,6 +667,8 @@ For fully automated Windows installation without manual input. Attach as a CD-RO
 
 ### Quick Start
 
+Clone this repo for the template file, then build and upload:
+
 ```bash
 # 1. Copy and edit the template
 cp templates/autounattend.xml.example autounattend.xml
