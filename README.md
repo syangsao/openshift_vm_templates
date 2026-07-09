@@ -14,6 +14,9 @@ Windows VirtualMachine templates, provisioning scripts, and automation for OpenS
 - [Automation (still need to validate)](#automation-still-need-to-validate) — Script and Ansible playbook
 - [Templates](#templates)
 - [Troubleshooting](#troubleshooting)
+  - [VirtualMachineClone fails: "backendstorage not supported"](#virtualmachineclone-fails-clone-of-source-with-backendstorage-is-not-supported) — Manual clone workaround
+  - [TPM: Persistent TPM state on cloned VMs](#tpm-persistent-tpm-state-on-cloned-vms) — UUID, BitLocker, TPM clearing
+  - [Other issues](#vm-wont-detect-the-data-disk-during-windows-setup) — Disk detection, MAC conflicts, DataVolume stuck, Sysprep errors
 - [Cluster Reference](CLUSTER_REFERENCE.md) — Cluster-specific values (luke)
 
 ---
@@ -808,11 +811,16 @@ EOF
 
 ### Step 12: Clone the Golden Image
 
+> **⚠️ VirtualMachineClone on OCP 4.22+:** The `VirtualMachineClone` CR fails with `Clone of source with backendstorage is not supported` on OCP 4.22+ with CDI v1.62+. Use the **manual clone workaround** below or see [Troubleshooting](#virtualmachineclone-fails-clone-of-source-with-backendstorage-is-not-supported).
+
+> **⚠️ TPM:** Each clone needs a unique `firmware.uuid` and `firmware.serial`. See [TPM troubleshooting](#tpm-persistent-tpm-state-on-cloned-vms) for details.
+
 #### Option A: Web Console
 
 1. Open OpenShift Virtualization console
 2. Navigate to **VirtualMachines** → find your golden VM
 3. Click **Clone** → enter new VM name → click **Create**
+4. If the clone fails with "backendstorage" error, use Option C below
 
 #### Option B: CLI — Generate New Manifest
 
@@ -1178,6 +1186,162 @@ ansible-playbook site.yml --tags configure
 ---
 
 ## Troubleshooting
+
+### VirtualMachineClone fails: "Clone of source with backendstorage is not supported"
+
+**Error:** `Clone of source with backendstorage is not supported: VM <namespace>/<vm-name>`
+
+**Cause:** On OCP 4.22+ with CDI v1.62+, the `VirtualMachineClone` CR uses a VolumeSnapshot-based populator (backend storage) to clone DataVolumes. KubeVirt's `VirtualMachineClone` controller does not support this topology — it expects direct PVC-to-PVC cloning.
+
+**Fix: Manual clone via standalone DataVolumes.** Skip the `VirtualMachineClone` CR entirely and clone by hand:
+
+```bash
+# 1. Get the source VM's DataVolume names
+oc get vm <source-vm> -n <namespace> -o jsonpath='{.spec.dataVolumeTemplates[*].metadata.name}'
+# Example output: <vm>-boot <vm>-data <vm>-virtio-win
+
+# 2. Generate a new UUID for the clone
+CLONE_UUID=$(cat /proc/sys/kernel/random/uuid)
+echo "Clone UUID: $CLONE_UUID"
+
+# 3. Create standalone DataVolumes from the source PVCs
+# Replace <source-vm> and <clone-vm> with your names
+oc apply -f - <<EOF
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: <clone-vm>-boot
+  namespace: <namespace>
+spec:
+  source:
+    pvc:
+      name: <source-vm>-boot
+      namespace: <namespace>
+  storage:
+    resources:
+      requests:
+        storage: 30Gi
+    storageClassName: nfs-csi
+---
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: <clone-vm>-data
+  namespace: <namespace>
+spec:
+  source:
+    pvc:
+      name: <source-vm>-data
+      namespace: <namespace>
+  storage:
+    resources:
+      requests:
+        storage: 100Gi
+    storageClassName: nfs-csi
+---
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: <clone-vm>-virtio-win
+  namespace: <namespace>
+spec:
+  source:
+    pvc:
+      name: <source-vm>-virtio-win
+      namespace: <namespace>
+  storage:
+    resources:
+      requests:
+        storage: 1Gi
+    storageClassName: nfs-csi
+EOF
+
+# 4. Wait for all DataVolumes to reach "Succeeded"
+oc get dv -n <namespace> -w
+# Monitor until all three show PHASE=Succeeded
+
+# 5. Create the clone VM manifest (no dataVolumeTemplates — DVs are standalone)
+# Use templates/windows-server-2025-vm.yaml as reference, but:
+#   - Remove the dataVolumeTemplates section entirely
+#   - Set unique firmware.uuid and firmware.serial (use $CLONE_UUID)
+#   - Remove macAddress from the interface (let KubeVirt auto-assign)
+#   - Reference the standalone DV names in the volumes section
+
+# 6. Apply the clone VM
+oc apply -f <clone-vm>.yaml -n <namespace>
+
+# 7. Start the clone
+# If 'oc virt' plugin is unavailable:
+oc patch vm <clone-vm> -n <namespace> \
+  -p '{"spec":{"runStrategy":"Always"}}' \
+  --type=merge
+# Or if you have the plugin:
+oc virt start <clone-vm> -n <namespace>
+```
+
+**Why this works:** Direct PVC-to-PVC cloning bypasses the VolumeSnapshot populator entirely. CDI copies the block data directly, which KubeVirt's controller accepts.
+
+---
+
+### TPM: Persistent TPM state on cloned VMs
+
+**Problem:** When your golden image has `tpm: { persistent: true }`, each clone creates a new `persistent-state-for-<vm>-<suffix>` PVC for TPM storage. This is expected behavior — KubeVirt provisions a fresh TPM backing store per VM.
+
+**However, cloning can fail or misbehave if:**
+
+1. **The clone reuses the source VM's firmware UUID.** Windows TPM is bound to the device UUID. If the clone shares the source's `firmware.uuid`, Windows may reject the TPM state or fail Secure Boot. **Always generate a new UUID for each clone.**
+
+2. **BitLocker is enabled on the golden image.** TPM-backed BitLocker keys are tied to the source VM's hardware identity. Clones will fail to unlock the OS disk. **Disable BitLocker before Sysprep.**
+
+3. **The persistent TPM PVC fails to provision.** Check events: `oc get events -n <namespace> | grep persistent-state`. If the NFS provisioner is slow, wait or check `oc get pv`.
+
+**Safe TPM configuration for golden images:**
+
+```yaml
+# In your VM manifest (works for golden image + clones):
+domain:
+  devices:
+    tpm:
+      persistent: true   # Creates per-VM PVC — safe for cloning
+  firmware:
+    uuid: <unique-per-vm>   # MUST be different for each clone
+    serial: <unique-per-vm> # MUST be different for each clone
+    bootloader:
+      efi:
+        persistent: true   # Creates per-VM EFI vars PVC — safe for cloning
+        secureBoot: true
+```
+
+**To avoid TPM issues during cloning:**
+
+```bash
+# Generate unique identifiers for each clone
+CLONE_UUID=$(cat /proc/sys/kernel/random/uuid)
+
+# Inside the Windows golden image, BEFORE Sysprep:
+# 1. Disable BitLocker (if enabled)
+manage-bde -off C:
+
+# 2. Clear TPM (optional, prevents key conflicts)
+#    Run in elevated PowerShell:
+Clear-Tpm -PhysicalPresenceConnectors Override -Confirm:$false
+
+# 3. Run Sysprep
+C:\Windows\System32\Sysprep\sysprep.exe /generalize /oobe /shutdown /mode:vm
+```
+
+**Generate UUIDs quickly:**
+
+```bash
+# Single UUID for both uuid and serial (simpler)
+VM_UUID=$(cat /proc/sys/kernel/random/uuid)
+
+# Or separate values
+VM_UUID=$(cat /proc/sys/kernel/random/uuid)
+VM_SERIAL=$(cat /proc/sys/kernel/random/uuid)
+```
+
+---
 
 ### VM won't detect the data disk during Windows Setup
 
