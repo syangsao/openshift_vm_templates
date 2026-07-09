@@ -78,22 +78,26 @@
       </AutoLogon>
 
       <FirstLogonCommands>
+        <!-- NOTE: Do NOT use wcm:action="add" on SynchronousCommand elements.
+             Sysprep's XML validator does not recognize the wcm namespace.
+             This differs from Windows Setup answer files. -->
+
         <!-- 1. Set hostname from KubeVirt VM name -->
-        <SynchronousCommand wcm:action="add">
+        <SynchronousCommand>
           <Order>1</Order>
           <CommandLine>powershell -NoProfile -ExecutionPolicy Bypass -Command "$vmname = (Get-CimInstance Win32_ComputerSystem).Name; $current = $env:COMPUTERNAME; if($vmname -ne $current){Rename-Computer -NewName $vmname -Force; Restart-Computer -Force}"</CommandLine>
           <Description>Set Hostname from VM</Description>
         </SynchronousCommand>
 
         <!-- 2. Enable WinRM for remote management -->
-        <SynchronousCommand wcm:action="add">
+        <SynchronousCommand>
           <Order>2</Order>
           <CommandLine>cmd /c powershell -NoProfile -Command "Set-Item WSMan:\localhost\Service\AllowUnencrypted $true; Set-Item WSMan:\localhost\Service\Auth\Basic $true; Enable-PSRemoting -Force"</CommandLine>
           <Description>Enable WinRM</Description>
         </SynchronousCommand>
 
         <!-- 3. Configure DHCP (default for masquerade networking) -->
-        <SynchronousCommand wcm:action="add">
+        <SynchronousCommand>
           <Order>3</Order>
           <CommandLine>powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-NetAdapter | Where-Object {$_.Status -eq 'Up'} | ForEach-Object {Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ResetDnsServerList; Set-NetIPInterface -InterfaceIndex $_.ifIndex -Dhcp Enabled}"</CommandLine>
           <Description>Configure DHCP</Description>
@@ -101,7 +105,7 @@
 
         <!-- 4. [OPTIONAL] Configure static IP — uncomment and edit for bridge/multus networking -->
         <!--
-        <SynchronousCommand wcm:action="add">
+        <SynchronousCommand>
           <Order>4</Order>
           <CommandLine>powershell -Command "New-NetIPAddress -InterfaceAlias 'Ethernet' -IPAddress 10.0.0.100 -PrefixLength 24 -DefaultGateway 10.0.0.1; Set-DnsClientServerAddress -InterfaceAlias 'Ethernet' -ServerAddresses 10.0.0.1, 8.8.8.8"</CommandLine>
           <Description>Configure Static IP</Description>
@@ -109,7 +113,7 @@
         -->
 
         <!-- 5. Start Windows Update in background -->
-        <SynchronousCommand wcm:action="add">
+        <SynchronousCommand>
           <Order>5</Order>
           <CommandLine>cmd /c powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process powershell -ArgumentList '-NoProfile -ExecutionPolicy Bypass -Command &quot;Start-Sleep 180; $session=New-Object -ComObject Microsoft.Update.Session; $searcher=$session.CreateUpdateSearcher(); $result=$searcher.Search(&apos;IsInstalled=0&apos;); if($result.Updates.Count -gt 0){$coll=New-Object -ComObject Microsoft.Update.UpdateColl; $result.Updates|%{$coll.Add($_)}; $installer=New-Object -ComObject Microsoft.Update.Installer; $installer.Updates=$coll; $installer.Install()}&quot;' -WindowStyle Hidden"</CommandLine>
           <Description>Run Windows Update</Description>
