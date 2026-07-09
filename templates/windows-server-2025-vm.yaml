@@ -80,9 +80,6 @@ spec:
               name: cdrom-iso
             - cdrom:
                 bus: sata
-              name: windows-drivers-disk
-            - cdrom:
-                bus: sata
               name: virtio-win-iso
           interfaces:
             - bridge: {}
@@ -110,9 +107,6 @@ spec:
         - dataVolume:
             name: {{vm.name}}-data
           name: rootdisk
-        - containerDisk:
-            image: registry.redhat.io/container-native-virtualization/virtio-win-rhel9@sha256:7e06e1f52a434d4602657c920144504fbaed955d0998535bdf345716355ce83a
-          name: windows-drivers-disk
         - dataVolume:
             name: virtio-win-iso
             namespace: openshift-virtualization-os-images
