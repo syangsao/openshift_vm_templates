@@ -149,7 +149,30 @@ virtctl image-upload dv virtio-win-iso \
   --insecure \
   --force-bind \
   -n openshift-virtualization-os-images
+
+# Wait for upload to complete
+oc get datavolume virtio-win-iso -n openshift-virtualization-os-images -w
+# PHASE should be "Succeeded"
 ```
+
+**Create a DataSource:**
+
+```bash
+oc apply -f - <<EOF
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataSource
+metadata:
+  name: virtio-win-iso
+  namespace: openshift-virtualization-os-images
+spec:
+  source:
+    pvc:
+      namespace: openshift-virtualization-os-images
+      name: virtio-win-iso
+EOF
+```
+
+The DataSource enables VMs in other namespaces to clone the ISO via DataVolumeTemplate without direct PVC access.
 
 **Inside the guest OS:** Open the ISO and run the driver installer:
 
@@ -483,6 +506,20 @@ spec:
               storage: 100Gi
           storageClassName: nfs-csi
 
+    # VirtIO drivers ISO — cloned from shared DataSource
+    - metadata:
+        name: <vm-name>-virtio-win
+      spec:
+        sourceRef:
+          kind: DataSource
+          name: virtio-win-iso
+          namespace: openshift-virtualization-os-images
+        storage:
+          resources:
+            requests:
+              storage: 1Gi
+          storageClassName: nfs-csi
+
   template:
     metadata:
       annotations:
@@ -532,8 +569,7 @@ spec:
             name: <vm-name>-data
           name: rootdisk
         - dataVolume:
-            name: virtio-win-iso
-            namespace: openshift-virtualization-os-images
+            name: <vm-name>-virtio-win
           name: virtio-win-iso
 ```
 
