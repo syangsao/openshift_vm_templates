@@ -31,7 +31,8 @@ The `templates/` directory contains:
 
 | File | Purpose |
 |---|---|
-| `windows11-vm.yaml` | VirtualMachine manifest with `{{vm.*}}` placeholders |
+| `windows-server-2025-vm.yaml` | VirtualMachine manifest for Server 2025 with `{{vm.*}}` placeholders |
+| `windows11-vm.yaml` | VirtualMachine manifest for Windows 11 with `{{vm.*}}` placeholders |
 | `autounattend.xml.example` | Windows OOBE automation XML with editable markers |
 
 Copy and edit these templates instead of writing YAML or XML from scratch.
@@ -48,6 +49,9 @@ Verify the cluster has the required resources:
 # DataSource (Windows ISO)
 oc get datasource windows-server-2025 -n openshift-virtualization-os-images
 
+# DataVolume (VirtIO ISO)
+oc get dv virtio-win-iso -n openshift-virtualization-os-images
+
 # Instance type and preference
 oc get virtualmachineclusterinstancetype u1.large
 oc get virtualmachineclusterpreference windows.server.virtio
@@ -61,11 +65,12 @@ oc get storageclass nfs-csi
 
 ### Architecture
 
-Each VM uses a three-disk pattern:
+Each VM uses a four-disk pattern:
 
 1. **Boot volume** — Cloned from the OS DataSource (30Gi). Attached as CD-ROM during install.
 2. **Data volume** — Blank disk (configurable size). The guest OS is installed here.
-3. **Virtio drivers** — CD-ROM ISO. Provides network, storage, and balloon drivers.
+3. **Virtio drivers (containerDisk)** — Red Hat containerDisk with baseline VirtIO drivers.
+4. **Virtio drivers (uploaded ISO)** — Latest ISO extracted from Red Hat RPM. Provides updated drivers.
 
 **Namespace strategy:**
 
@@ -506,6 +511,9 @@ spec:
             - cdrom:
                 bus: sata
               name: windows-drivers-disk
+            - cdrom:
+                bus: sata
+              name: virtio-win-iso
           interfaces:
             - bridge: {}
               macAddress: <vm-mac>
@@ -535,6 +543,10 @@ spec:
         - containerDisk:
             image: registry.redhat.io/container-native-virtualization/virtio-win-rhel9@sha256:7e06e1f52a434d4602657c920144504fbaed955d0998535bdf345716355ce83a
           name: windows-drivers-disk
+        - dataVolume:
+            name: virtio-win-iso
+            namespace: openshift-virtualization-os-images
+          name: virtio-win-iso
 ```
 
 **Key fields to customize:**
