@@ -71,6 +71,14 @@ Each VM uses a three-disk pattern:
 2. **Data volume** — Blank disk (configurable size). The guest OS is installed here. Uses `virtio` bus for performance.
 3. **Virtio drivers** — Uploaded ISO from Red Hat RPM. Provides network, storage, and balloon drivers.
 
+**Volume name mapping:**
+
+| Volume name | DataVolume | What it is |
+|---|---|---|
+| `windows-iso` | `<vm-name>-boot` | Windows Server 2025 ISO (CD-ROM) |
+| `os-disk` | `<vm-name>-data` | Blank disk for guest OS (virtio) |
+| `virtio-win-iso` | `<vm-name>-virtio-win` | VirtIO drivers ISO (CD-ROM) |
+
 **Key features from official template:** Full Hyper-V enlightenment (reenlightenment, ipi, synic, synictimer, spinlocks, reset, relaxed, vpindex, runtime, tlbflush, frequencies, vapic), clock/timer optimization, SMM, persistent TPM, persistent EFI with secure boot, and USB tablet input.
 
 **Namespace strategy:**
@@ -428,10 +436,10 @@ sourceRef:
   name: windows-wim-custom-v1
   namespace: openshift-virtualization-os-images
 
-# Also change the disk name from rootdisk to match your DV:
+# Also change the disk name from os-disk to match your DV:
 - dataVolume:
     name: <vm-name>-data
-  name: rootdisk
+  name: os-disk
 ```
 
 The VM boots directly from the WIM-deployed disk — no ISO install required.
@@ -558,11 +566,11 @@ spec:
             - bootOrder: 1
               disk:
                 bus: virtio
-              name: rootdisk
+              name: os-disk
             - bootOrder: 2
               cdrom:
                 bus: sata
-              name: cdrom-iso
+              name: windows-iso
             - cdrom:
                 bus: sata
               name: virtio-win-iso
@@ -614,10 +622,10 @@ spec:
       volumes:
         - dataVolume:
             name: <vm-name>-boot
-          name: cdrom-iso
+          name: windows-iso
         - dataVolume:
             name: <vm-name>-data
-          name: rootdisk
+          name: os-disk
         - dataVolume:
             name: <vm-name>-virtio-win
           name: virtio-win-iso
