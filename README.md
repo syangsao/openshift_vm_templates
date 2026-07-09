@@ -783,7 +783,11 @@ This:
 
 ### Step 11: Create a DataSource
 
-After Sysprep shuts down the VM, create a DataSource from the data disk PVC so clones can reference it:
+After Sysprep shuts down the VM, create a DataSource from the data disk PVC.
+
+**Why this is needed:** Without a DataSource, your golden image is locked to one namespace and you can't clone it cleanly. A DataSource makes the PVC accessible cluster-wide so any project can clone from it via DataVolume. It also enables the **Clone** button in the OpenShift Virtualization web console.
+
+Skip it only if you need a single clone in the same namespace and don't mind manually creating a DataVolume each time. Not practical if you deploy more than one VM.
 
 ```bash
 oc apply -f - <<EOF
