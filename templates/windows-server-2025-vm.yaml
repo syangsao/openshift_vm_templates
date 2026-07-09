@@ -104,11 +104,11 @@ spec:
             - bootOrder: 1
               disk:
                 bus: virtio
-              name: rootdisk
+              name: os-disk
             - bootOrder: 2
               cdrom:
                 bus: sata
-              name: cdrom-iso
+              name: windows-iso
             - cdrom:
                 bus: sata
               name: virtio-win-iso
@@ -160,10 +160,10 @@ spec:
       volumes:
         - dataVolume:
             name: {{vm.name}}-boot
-          name: cdrom-iso
+          name: windows-iso
         - dataVolume:
             name: {{vm.name}}-data
-          name: rootdisk
+          name: os-disk
         - dataVolume:
             name: {{vm.name}}-virtio-win
           name: virtio-win-iso
