@@ -1,5 +1,5 @@
 # windows-server-2025-vm.yaml — Reference VirtualMachine spec for Windows Server 2025
-# Source: Generated from windows11-vm.yaml or hand-tuned for documentation
+# Source: Merged from official `windows2k25-server-medium` OpenShift template + custom multi-disk layout
 # Replace {{variables}} or use the script instead.
 
 # === CONFIGURABLE PARAMETERS ===
@@ -19,9 +19,11 @@ metadata:
   name: {{vm.name}}
   namespace: {{vm.namespace}}
   labels:
+    app: {{vm.name}}
     app.kubernetes.io/name: {{vm.name}}
     app.kubernetes.io/component: windows-vm
     app.kubernetes.io/template: windows-server-2025
+    vm.kubevirt.io/template: windows-server-2025-custom
 spec:
   instancetype:
     name: {{vm.instancetype}}
@@ -75,17 +77,33 @@ spec:
     metadata:
       annotations:
         kubevirt.io/pci-topology-version: v3
+        vm.kubevirt.io/flavor: medium
+        vm.kubevirt.io/os: windows2k25
+        vm.kubevirt.io/workload: server
       labels:
+        kubevirt.io/domain: {{vm.name}}
         network.kubevirt.io/headlessService: headless
     spec:
       architecture: amd64
       subdomain: headless
 
       domain:
+        clock:
+          timer:
+            hpet:
+              present: false
+            hyperv: {}
+            pit:
+              tickPolicy: delay
+            rtc:
+              tickPolicy: catchup
+          utc: {}
         devices:
           autoattachPodInterface: false
           disks:
             - bootOrder: 1
+              disk:
+                bus: virtio
               name: rootdisk
             - bootOrder: 2
               cdrom:
@@ -94,23 +112,50 @@ spec:
             - cdrom:
                 bus: sata
               name: virtio-win-iso
+          inputs:
+            - bus: usb
+              name: tablet
+              type: tablet
           interfaces:
             - bridge: {}
               model: virtio
               name: default
               state: up
-
+          tpm:
+            persistent: true
+        features:
+          acpi: {}
+          apic: {}
+          hyperv:
+            reenlightenment: {}
+            ipi: {}
+            synic: {}
+            synictimer:
+              direct: {}
+            spinlocks:
+              spinlocks: 8191
+            reset: {}
+            relaxed: {}
+            vpindex: {}
+            runtime: {}
+            tlbflush: {}
+            frequencies: {}
+            vapic: {}
+          smm: {}
         firmware:
           uuid: {{vm.uuid}}
           serial: {{vm.serial}}
-
-        machine:
-          type: pc-q35-rhel9.8.0
+          bootloader:
+            efi:
+              persistent: true
+              secureBoot: true
 
       networks:
         - multus:
             networkName: {{vm.network_ns}}/{{vm.network_name}}
           name: default
+
+      terminationGracePeriodSeconds: 3600
 
       volumes:
         - dataVolume:

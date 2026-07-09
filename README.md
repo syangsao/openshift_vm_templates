@@ -68,8 +68,10 @@ oc get storageclass nfs-csi
 Each VM uses a three-disk pattern:
 
 1. **Boot volume** — Cloned from the OS DataSource (30Gi). Attached as CD-ROM during install.
-2. **Data volume** — Blank disk (configurable size). The guest OS is installed here.
+2. **Data volume** — Blank disk (configurable size). The guest OS is installed here. Uses `virtio` bus for performance.
 3. **Virtio drivers** — Uploaded ISO from Red Hat RPM. Provides network, storage, and balloon drivers.
+
+**Key features from official template:** Full Hyper-V enlightenment (reenlightenment, ipi, synic, synictimer, spinlocks, reset, relaxed, vpindex, runtime, tlbflush, frequencies, vapic), clock/timer optimization, SMM, persistent TPM, persistent EFI with secure boot, and USB tablet input.
 
 **Namespace strategy:**
 
@@ -463,7 +465,9 @@ echo "Serial: $VM_SERIAL"
 
 ### Step 2: Create the VirtualMachine Manifest
 
-Create the YAML by hand or use `templates/windows-server-2025-vm.yaml` as a reference. Replace `<vm-name>`, UUIDs, and MAC with your values:
+Create the YAML by hand or use `templates/windows-server-2025-vm.yaml` as a reference. The template is based on the official `windows2k25-server-medium` OpenShift template, merged with multi-disk layout and multus networking.
+
+Replace `<vm-name>`, UUIDs, and network values with your values:
 
 ```yaml
 apiVersion: kubevirt.io/v1
@@ -471,6 +475,9 @@ kind: VirtualMachine
 metadata:
   name: <vm-name>
   namespace: virt-windows
+  labels:
+    app: <vm-name>
+    vm.kubevirt.io/template: windows-server-2025-custom
 spec:
   instancetype:
     name: u1.large
@@ -524,17 +531,33 @@ spec:
     metadata:
       annotations:
         kubevirt.io/pci-topology-version: v3
+        vm.kubevirt.io/flavor: medium
+        vm.kubevirt.io/os: windows2k25
+        vm.kubevirt.io/workload: server
       labels:
+        kubevirt.io/domain: <vm-name>
         network.kubevirt.io/headlessService: headless
     spec:
       architecture: amd64
       subdomain: headless
 
       domain:
+        clock:
+          timer:
+            hpet:
+              present: false
+            hyperv: {}
+            pit:
+              tickPolicy: delay
+            rtc:
+              tickPolicy: catchup
+          utc: {}
         devices:
           autoattachPodInterface: false
           disks:
             - bootOrder: 1
+              disk:
+                bus: virtio
               name: rootdisk
             - bootOrder: 2
               cdrom:
@@ -543,23 +566,50 @@ spec:
             - cdrom:
                 bus: sata
               name: virtio-win-iso
+          inputs:
+            - bus: usb
+              name: tablet
+              type: tablet
           interfaces:
             - bridge: {}
               model: virtio
               name: default
               state: up
-
+          tpm:
+            persistent: true
+        features:
+          acpi: {}
+          apic: {}
+          hyperv:
+            reenlightenment: {}
+            ipi: {}
+            synic: {}
+            synictimer:
+              direct: {}
+            spinlocks:
+              spinlocks: 8191
+            reset: {}
+            relaxed: {}
+            vpindex: {}
+            runtime: {}
+            tlbflush: {}
+            frequencies: {}
+            vapic: {}
+          smm: {}
         firmware:
           uuid: <vm-uuid>
           serial: <vm-serial>
-
-        machine:
-          type: pc-q35-rhel9.8.0
+          bootloader:
+            efi:
+              persistent: true
+              secureBoot: true
 
       networks:
         - multus:
             networkName: default/vlan-60
           name: default
+
+      terminationGracePeriodSeconds: 3600
 
       volumes:
         - dataVolume:
@@ -578,7 +628,7 @@ spec:
 | Field | Purpose | Example |
 |---|---|---|
 | `metadata.name` | VM name | `ws2025-golden` |
-| `spec.dataVolumeTemplates[*].name` | Must match `<vm-name>-boot` and `<vm-name>-data` | `ws2025-golden-boot` |
+| `spec.dataVolumeTemplates[*].name` | Must match `<vm-name>-boot`, `<vm-name>-data`, `<vm-name>-virtio-win` | `ws2025-golden-boot` |
 | `firmware.uuid` / `firmware.serial` | Unique per VM | Output from Step 1 |
 | `networks[0].multus.networkName` | NetworkAttachmentDef ref | `default/vlan-60` |
 
