@@ -33,7 +33,8 @@ The `templates/` directory contains:
 |---|---|
 | `windows-server-2025-vm.yaml` | VirtualMachine manifest for Server 2025 with `{{vm.*}}` placeholders |
 | `windows11-vm.yaml` | VirtualMachine manifest for Windows 11 with `{{vm.*}}` placeholders |
-| `autounattend.xml.example` | Windows Server 2025 Datacenter (Desktop Experience) autounattend XML with editable markers |
+| `autounattend.xml.example` | Initial Windows install (attached as ISO CD-ROM) — disk partitioning, virtio drivers, OOBE skip |
+| `unattend.xml.example` | Golden image clone config (placed in Sysprep folder) — hostname, network, OOBE skip on first boot |
 
 Copy and edit these templates instead of writing YAML or XML from scratch.
 
@@ -744,15 +745,17 @@ Inside the Windows VM, install applications, configure settings, and apply patch
 
 ### Step 9: Create unattend.xml (Optional)
 
-If you want clones to automatically configure hostname and network on first boot, create an `unattend.xml` and place it at `C:\Windows\System32\Sysprep\unattend.xml` before running Sysprep.
+If you want clones to automatically configure hostname and network on first boot, use `templates/unattend.xml.example`:
 
-See [unattend.xml Reference](#unattendxml-reference) for the full template.
+```bash
+# Copy and edit the template
+cp templates/unattend.xml.example unattend.xml
+# Edit: ComputerName, AdministratorPassword, network config
+```
 
-For golden images, the key sections are:
+Place it at `C:\Windows\System32\Sysprep\unattend.xml` on the golden image VM before running Sysprep.
 
-- **specialize pass** — Sets `ComputerName` (use a placeholder like `GOLDEN-CLONE`)
-- **FirstLogonCommands** — Runs `netsh`/PowerShell to configure static IP, gateway, DNS
-- **OOBE pass** — Skips all OOBE screens, enables auto-logon
+See [unattend.xml Reference](#unattendxml-reference) for the full explanation of both answer files and the two-file workflow.
 
 ---
 
@@ -893,9 +896,34 @@ windows-golden-image-v3   →  Updated to Windows 11 25H2
 
 ## unattend.xml Reference
 
-For fully automated Windows installation without manual input. Attach as a CD-ROM alongside the Windows ISO and VirtIO ISO.
+Two answer files, two different moments in the Windows lifecycle:
 
-### Quick Start
+| File | When it runs | How it's delivered | What it does |
+|---|---|---|---|
+| `autounattend.xml` | Initial Windows install from ISO | Attached as CD-ROM ISO | Disk partitioning, virtio driver loading, admin account, OOBE skip, post-install scripts |
+| `unattend.xml` | Clone first boot after Sysprep | Placed at `C:\Windows\System32\Sysprep\unattend.xml` | Sets clone hostname, configures network, skips OOBE on the clone |
+
+**Workflow:**
+
+```
+autounattend.xml (ISO)          unattend.xml (Sysprep)
+─────────────────────           ──────────────────────
+1. Build golden VM              5. Clone golden image
+   → installs Windows            → clone boots
+   → loads virtio drivers        → unattend.xml runs
+   → creates admin account         → sets hostname
+   → skips OOBE                    → configures network
+2. Configure golden image         → skips OOBE
+   → install apps, patches
+3. Copy unattend.xml
+   → to C:\Windows\System32\Sysprep\
+4. Run Sysprep /generalize
+   → shuts down, golden image ready
+```
+
+### `autounattend.xml` — Initial Install
+
+Fully automated Windows installation without manual input. Attach as a CD-ROM alongside the Windows ISO and VirtIO ISO.
 
 ```bash
 # 1. Copy and edit the template
@@ -933,6 +961,27 @@ virtctl image-upload dv autounattend-iso \
   --force-bind \
   -n virt-windows
 ```
+
+### `unattend.xml` — Golden Image Clone Config
+
+Configures each clone on first boot after being cloned from a Sysprepped golden image.
+
+```bash
+# 1. Copy and edit the template
+cp templates/unattend.xml.example unattend.xml
+# Edit: ComputerName, AdministratorPassword, network config
+
+# 2. Copy to the golden image VM
+#    Place at C:\Windows\System32\Sysprep\unattend.xml
+#    (e.g. via scp, or copy-paste in the VM console)
+
+# 3. Run Sysprep on the golden image
+#    C:\Windows\System32\Sysprep\sysprep.exe /generalize /oobe /shutdown /mode:vm
+
+# 4. Clones pick up the file automatically on first boot
+```
+
+**Key difference:** `unattend.xml` has no disk partitioning, no driver loading, and no Windows PE pass. The clone already has a working OS — it just needs hostname, network, and OOBE skip.
 
 ### Add to VM Manifest
 

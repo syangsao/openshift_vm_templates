@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  autounattend.xml — Fully automated Windows installation for OpenShift Virtualization
+  autounattend.xml — Initial Windows installation for OpenShift Virtualization
+
+  What this does:
+    Automates the first install of Windows from ISO: disk partitioning, virtio
+    driver loading, admin account, OOBE skip, and post-install configuration.
+    Used when building your golden image VM from scratch.
 
   Usage:
     1. Copy this file and edit the values marked with [EDIT]
@@ -8,7 +13,13 @@
     3. Upload as DataVolume: virtctl image-upload dv autounattend-iso --size=1G --image-path=autounattend.iso --insecure --force-bind -n <namespace>
     4. Attach as CD-ROM to your VM manifest (see README.md)
 
-  IMPORTANT: The file MUST be named autounattend.xml (not unattend.xml) for Windows Setup to find it automatically.
+  IMPORTANT: The file MUST be named autounattend.xml (not unattend.xml) for
+  Windows Setup to find it automatically.
+
+  Two-file workflow:
+    autounattend.xml  → Initial install (attached as ISO)
+    unattend.xml      → Clone first boot (placed in Sysprep folder)
+    See unattend.xml.example for the golden image clone configuration.
 
   Reference: https://learn.microsoft.com/windows-hardware/manufacture/desktop/update-windows-settings-and-scripts-create-your-own-answer-file-sxs
 -->

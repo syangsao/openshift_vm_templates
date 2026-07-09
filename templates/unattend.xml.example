@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  unattend.xml — Golden image clone configuration (Step 9)
+
+  What this does:
+    Runs when a cloned VM boots for the first time after being cloned from
+    a Sysprepped golden image. Sets the clone's hostname, configures network,
+    and skips OOBE so the clone is ready without interaction.
+
+  How to use:
+    1. Copy this file and edit the [EDIT] values below.
+    2. Place it at C:\Windows\System32\Sysprep\unattend.xml on your
+       golden image VM BEFORE running Sysprep.
+    3. Run Sysprep:
+         C:\Windows\System32\Sysprep\sysprep.exe /generalize /oobe /shutdown /mode:vm
+    4. Create a DataSource from the golden image data disk.
+    5. Clones will pick up this file and auto-configure on first boot.
+
+  IMPORTANT: This file is for golden image clones ONLY.
+  For the initial Windows installation, use autounattend.xml.example
+  (attached as CD-ROM ISO).
+
+  Reference: https://learn.microsoft.com/windows-hardware/manufacture/desktop/update-windows-settings-and-scripts-create-your-own-answer-file-sxs
+-->
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+
+  <!-- ========================================================================
+       Specialize phase — runs on first boot of the clone
+       ======================================================================== -->
+  <settings pass="specialize">
+    <component name="Microsoft-Windows-Shell-Setup"
+      processorArchitecture="amd64"
+      publicKeyToken="31bf3856ad364e35"
+      language="neutral"
+      versionScope="nonSxS">
+      <!-- [EDIT]: Clone hostname — change this for each golden image version -->
+      <ComputerName>WIN-CLONE</ComputerName>
+      <TimeZone>UTC</TimeZone>
+    </component>
+
+    <!-- Disable Server Manager at logon (Server editions) -->
+    <component name="Microsoft-Windows-ServerManager-SvrMgrNc"
+      processorArchitecture="amd64"
+      publicKeyToken="31bf3856ad364e35"
+      language="neutral"
+      versionScope="nonSxS">
+      <DoNotOpenServerManagerAtLogon>true</DoNotOpenServerManagerAtLogon>
+    </component>
+  </settings>
+
+  <!-- ========================================================================
+       OOBE phase — skip all setup screens on the clone
+       ======================================================================== -->
+  <settings pass="oobeSystem">
+    <component name="Microsoft-Windows-Shell-Setup"
+      processorArchitecture="amd64"
+      publicKeyToken="31bf3856ad364e35"
+      language="neutral"
+      versionScope="nonSxS">
+
+      <!-- [EDIT]: Administrator password for the clone -->
+      <UserAccounts>
+        <AdministratorPassword>
+          <Value>[EDIT]P@ssw0rd1234!</Value>
+          <PlainText>true</PlainText>
+        </AdministratorPassword>
+      </UserAccounts>
+
+      <!-- Auto-logon for first boot — useful for post-install scripts -->
+      <AutoLogon>
+        <Username>Administrator</Username>
+        <Enabled>true</Enabled>
+        <LogonCount>3</LogonCount>
+        <Password>
+          <Value>[EDIT]P@ssw0rd1234!</Value>
+          <PlainText>true</PlainText>
+        </Password>
+      </AutoLogon>
+
+      <FirstLogonCommands>
+        <!-- 1. Enable WinRM for remote management -->
+        <SynchronousCommand wcm:action="add">
+          <Order>1</Order>
+          <CommandLine>cmd /c powershell -NoProfile -Command "Set-Item WSMan:\localhost\Service\AllowUnencrypted $true; Set-Item WSMan:\localhost\Service\Auth\Basic $true; Enable-PSRemoting -Force"</CommandLine>
+          <Description>Enable WinRM</Description>
+        </SynchronousCommand>
+
+        <!-- 2. [OPTIONAL] Configure static IP — [EDIT]: Remove or customize -->
+        <!--
+        <SynchronousCommand wcm:action="add">
+          <Order>2</Order>
+          <CommandLine>powershell -Command "New-NetIPAddress -InterfaceAlias 'Ethernet' -IPAddress 10.0.0.100 -PrefixLength 24 -DefaultGateway 10.0.0.1; Set-DnsClientServerAddress -InterfaceAlias 'Ethernet' -ServerAddresses 10.0.0.1, 8.8.8.8"</CommandLine>
+          <Description>Configure Static IP</Description>
+        </SynchronousCommand>
+        -->
+
+        <!-- 3. Start Windows Update in background -->
+        <SynchronousCommand wcm:action="add">
+          <Order>3</Order>
+          <CommandLine>cmd /c powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process powershell -ArgumentList '-NoProfile -ExecutionPolicy Bypass -Command &quot;Start-Sleep 180; $session=New-Object -ComObject Microsoft.Update.Session; $searcher=$session.CreateUpdateSearcher(); $result=$searcher.Search(&apos;IsInstalled=0&apos;); if($result.Updates.Count -gt 0){$coll=New-Object -ComObject Microsoft.Update.UpdateColl; $result.Updates|%{$coll.Add($_)}; $installer=New-Object -ComObject Microsoft.Update.Installer; $installer.Updates=$coll; $installer.Install()}&quot;' -WindowStyle Hidden"</CommandLine>
+          <Description>Run Windows Update</Description>
+        </SynchronousCommand>
+      </FirstLogonCommands>
+
+      <!-- Skip all OOBE screens -->
+      <OOBE>
+        <HideEULAPage>true</HideEULAPage>
+        <HideLocalAccountScreen>true</HideLocalAccountScreen>
+        <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
+        <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+        <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+        <NetworkLocation>Work</NetworkLocation>
+        <ProtectYourPC>3</ProtectYourPC>
+        <SkipUserOOBE>true</SkipUserOOBE>
+        <SkipMachineOOBE>true</SkipMachineOOBE>
+      </OOBE>
+
+      <TimeZone>UTC</TimeZone>
+    </component>
+
+    <component name="Microsoft-Windows-International-Core"
+      processorArchitecture="amd64"
+      publicKeyToken="31bf3856ad364e35"
+      language="neutral"
+      versionScope="nonSxS">
+      <InputLocale>en-US</InputLocale>
+      <SystemLocale>en-US</SystemLocale>
+      <UserLocale>en-US</UserLocale>
+      <UILanguage>en-US</UILanguage>
+    </component>
+  </settings>
+
+</unattend>
