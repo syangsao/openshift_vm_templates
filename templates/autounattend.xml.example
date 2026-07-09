@@ -49,12 +49,14 @@
           <InstallFrom>
             <MetaData wcm:action="add">
               <Key>/IMAGE/NAME</Key>
-              <!-- Windows 11 Pro: -->
-              <Value>Windows 11 Pro</Value>
-              <!-- Windows Server 2022 Standard: -->
-              <!-- <Value>Windows Server 2022 SERVERSTANDARD</Value> -->
-              <!-- Windows Server 2025 Datacenter: -->
+              <!-- Windows Server 2025 Datacenter (Desktop Experience): -->
+              <Value>Windows Server 2025 Datacenter (Desktop Experience)</Value>
+              <!-- Windows Server 2025 Datacenter (no desktop): -->
               <!-- <Value>Windows Server 2025 SERVERDATACENTER</Value> -->
+              <!-- Windows Server 2025 Standard (Desktop Experience): -->
+              <!-- <Value>Windows Server 2025 Standard (Desktop Experience)</Value> -->
+              <!-- Windows 11 Pro: -->
+              <!-- <Value>Windows 11 Pro</Value> -->
             </MetaData>
           </InstallFrom>
         </OSImage>
@@ -108,29 +110,30 @@
       <DriverConfiguration>
         <WillShowUI>Never</WillShowUI>
         <Path>
-          <Path>D:\amd64\w11\</Path>
-          <Path>E:\amd64\w11\</Path>
-          <Path>F:\amd64\w11\</Path>
-          <Path>G:\amd64\w11\</Path>
-          <Path>H:\amd64\w11\</Path>
-          <Path>I:\amd64\w11\</Path>
-          <Path>J:\amd64\w11\</Path>
-          <Path>K:\amd64\w11\</Path>
-          <Path>L:\amd64\w11\</Path>
-          <Path>M:\amd64\w11\</Path>
-          <Path>N:\amd64\w11\</Path>
-          <Path>O:\amd64\w11\</Path>
-          <Path>P:\amd64\w11\</Path>
-          <Path>Q:\amd64\w11\</Path>
-          <Path>R:\amd64\w11\</Path>
-          <Path>S:\amd64\w11\</Path>
-          <Path>T:\amd64\w11\</Path>
-          <Path>U:\amd64\w11\</Path>
-          <Path>V:\amd64\w11\</Path>
-          <Path>W:\amd64\w11\</Path>
-          <Path>X:\amd64\w11\</Path>
-          <Path>Y:\amd64\w11\</Path>
-          <Path>Z:\amd64\w11\</Path>
+          <!-- [EDIT]: Change w11 to 2k25 for Server 2025, 2k22 for Server 2022, etc. -->
+          <Path>D:\amd64\2k25\</Path>
+          <Path>E:\amd64\2k25\</Path>
+          <Path>F:\amd64\2k25\</Path>
+          <Path>G:\amd64\2k25\</Path>
+          <Path>H:\amd64\2k25\</Path>
+          <Path>I:\amd64\2k25\</Path>
+          <Path>J:\amd64\2k25\</Path>
+          <Path>K:\amd64\2k25\</Path>
+          <Path>L:\amd64\2k25\</Path>
+          <Path>M:\amd64\2k25\</Path>
+          <Path>N:\amd64\2k25\</Path>
+          <Path>O:\amd64\2k25\</Path>
+          <Path>P:\amd64\2k25\</Path>
+          <Path>Q:\amd64\2k25\</Path>
+          <Path>R:\amd64\2k25\</Path>
+          <Path>S:\amd64\2k25\</Path>
+          <Path>T:\amd64\2k25\</Path>
+          <Path>U:\amd64\2k25\</Path>
+          <Path>V:\amd64\2k25\</Path>
+          <Path>W:\amd64\2k25\</Path>
+          <Path>X:\amd64\2k25\</Path>
+          <Path>Y:\amd64\2k25\</Path>
+          <Path>Z:\amd64\2k25\</Path>
         </Path>
       </DriverConfiguration>
 
@@ -237,10 +240,10 @@
           <Description>Enable WinRM</Description>
         </SynchronousCommand>
 
-        <!-- 2. Install virtio drivers from containerDisk CD-ROM -->
+        <!-- 2. Install virtio drivers from CD-ROM -->
         <SynchronousCommand wcm:action="add">
           <Order>2</Order>
-          <CommandLine>cmd /c powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-Volume | Where-Object {$_.DriveType -eq 'CD-ROM'} | ForEach-Object {$l=$_.DriveLetter; $s=Get-ChildItem `"$l:\`" -Filter 'virtio-win-gt-x64.exe' -ErrorAction SilentlyContinue; if($s){&amp; $s.FullName '/S'}}"</CommandLine>
+          <CommandLine>cmd /c powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-Volume | Where-Object {$_.DriveType -eq 'CD-ROM'} | ForEach-Object {$l=$_.DriveLetter; $s=Get-ChildItem `"${l}:\`" -Filter 'virtio-win-gt-x64.exe' -ErrorAction SilentlyContinue; if($s){&amp; $s.FullName '/S'}}"</CommandLine>
           <Description>Install Virtio Drivers</Description>
         </SynchronousCommand>
 
