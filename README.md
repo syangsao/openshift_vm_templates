@@ -4,8 +4,10 @@ Windows VirtualMachine templates, provisioning scripts, and automation for OpenS
 
 ## Contents
 
+- [Clone This Repository](#clone-this-repository) — Get the templates and scripts
 - [Prerequisites](#prerequisites)
   - [Download and Upload VirtIO Drivers](#download-and-upload-virtio-drivers) — RPM → ISO → cluster upload
+  - [Download and Upload Windows Server 2025 ISO](#download-and-upload-windows-server-2025-iso) — VLSC → ISO → DataSource
 - [WIM-to-Disk: Import Custom Windows Images](#wim-to-disk-import-custom-windows-images) — Convert a .wim to a bootable disk, upload, deploy
 - [Manual Golden Image Workflow](#manual-golden-image-workflow) — Step-by-step: build, generalize, clone
 - [unattend.xml Reference](#unattendxml-reference) — Automated Windows installation
@@ -13,6 +15,26 @@ Windows VirtualMachine templates, provisioning scripts, and automation for OpenS
 - [Templates](#templates)
 - [Troubleshooting](#troubleshooting)
 - [Cluster Reference](CLUSTER_REFERENCE.md) — Cluster-specific values (luke)
+
+---
+
+## Clone This Repository
+
+This repo contains the VM templates, `autounattend.xml` reference, and automation scripts used in the guides below.
+
+```bash
+git clone https://github.com/syangsao/openshift_vm_templates.git
+cd openshift_vm_templates
+```
+
+The `templates/` directory contains:
+
+| File | Purpose |
+|---|---|
+| `windows11-vm.yaml` | VirtualMachine manifest with `{{vm.*}}` placeholders |
+| `autounattend.xml.example` | Windows OOBE automation XML with editable markers |
+
+Copy and edit these templates instead of writing YAML or XML from scratch.
 
 ---
 
@@ -132,6 +154,90 @@ D:\virtio-win-gt-x64.msi
 ```
 
 This installs all VirtIO drivers (NetKVM, viostor, balloon, qxl, etc.) in one step.
+
+---
+
+### Download and Upload Windows Server 2025 ISO
+
+Download the Windows Server 2025 ISO from the Microsoft Volume Licensing portal, upload it to the cluster, and create a DataSource.
+
+**Download:**
+
+1. Go to [Microsoft Volume Licensing Service Center](https://www.microsoft.com/licensing/servicecenter)
+2. Navigate to **Products and Services** → **Windows Server 2025**
+3. Download the **Windows Server 2025 Datacenter** ISO (English, x64)
+4. Copy the ISO to your workstation
+
+**Upload via CLI:**
+
+```bash
+# Create a DataVolume for the ISO
+oc apply -f - <<EOF
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: windows-server-2025-iso
+  namespace: openshift-virtualization-os-images
+  annotations:
+    cdi.kubevirt.io/storage.bind.immediate.requested: "true"
+spec:
+  storage:
+    resources:
+      requests:
+        storage: 10Gi
+    accessModes:
+      - ReadWriteMany
+    storageClassName: nfs-csi
+  source:
+    upload: {}
+EOF
+
+# Upload the ISO
+virtctl image-upload dv windows-server-2025-iso \
+  --size=8G \
+  --image-path=Windows_Server_2025.iso \
+  --insecure \
+  --force-bind \
+  -n openshift-virtualization-os-images
+
+# Wait for upload to complete
+oc get datavolume windows-server-2025-iso -n openshift-virtualization-os-images -w
+# PHASE should be "Succeeded"
+```
+
+**Create a DataSource:**
+
+```bash
+oc apply -f - <<EOF
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataSource
+metadata:
+  name: windows-server-2025
+  namespace: openshift-virtualization-os-images
+spec:
+  source:
+    pvc:
+      namespace: openshift-virtualization-os-images
+      name: windows-server-2025-iso
+EOF
+```
+
+**Verify:**
+
+```bash
+oc get datasource windows-server-2025 -n openshift-virtualization-os-images
+```
+
+When creating the VM manifest, reference this DataSource in the boot volume:
+
+```yaml
+sourceRef:
+  kind: DataSource
+  name: windows-server-2025
+  namespace: openshift-virtualization-os-images
+```
+
+Also update the VirtIO driver path during Windows Setup to `viostor\ws2025\amd64\` instead of `viostor\w11\amd64\`.
 
 ---
 
