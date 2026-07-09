@@ -73,11 +73,42 @@ Each VM uses a three-disk pattern:
 
 **Volume name mapping:**
 
-| Volume name | DataVolume | What it is |
-|---|---|---|
-| `windows-iso` | `<vm-name>-boot` | Windows Server 2025 ISO (CD-ROM) |
-| `os-disk` | `<vm-name>-data` | Blank disk for guest OS (virtio) |
-| `virtio-win-iso` | `<vm-name>-virtio-win` | VirtIO drivers ISO (CD-ROM) |
+| Volume name | DataVolume | DataSource | What it is |
+|---|---|---|---|
+| `windows-iso` | `<vm-name>-boot` | `windows-server-2025` | Windows Server 2025 ISO (CD-ROM) |
+| `os-disk` | `<vm-name>-data` | `blank: {}` | Blank disk for guest OS (virtio) |
+| `virtio-win-iso` | `<vm-name>-virtio-win` | `virtio-win-iso` | VirtIO drivers ISO (CD-ROM) |
+
+**How the chain works:**
+
+```
+Volume name (in disks/volumes)
+  ↓ matched by name in volumes section
+DataVolume name
+  ↓ matched by name in dataVolumeTemplates
+DataSource (sourceRef)
+```
+
+The `volumes` section is the bridge — it maps each volume name to a DataVolume:
+
+```yaml
+volumes:
+  - dataVolume:
+      name: <vm-name>-boot      # DataVolume name
+    name: windows-iso            # Volume name (used in disks)
+```
+
+The `dataVolumeTemplates` section then tells each DataVolume where to clone from:
+
+```yaml
+dataVolumeTemplates:
+  - metadata:
+      name: <vm-name>-boot      # Same DataVolume name
+    spec:
+      sourceRef:
+        kind: DataSource
+        name: windows-server-2025  # The DataSource
+```
 
 **Key features from official template:** Full Hyper-V enlightenment (reenlightenment, ipi, synic, synictimer, spinlocks, reset, relaxed, vpindex, runtime, tlbflush, frequencies, vapic), clock/timer optimization, SMM, persistent TPM, persistent EFI with secure boot, and USB tablet input.
 
