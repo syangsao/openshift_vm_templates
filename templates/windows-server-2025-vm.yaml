@@ -57,6 +57,20 @@ spec:
               storage: {{vm.data_size}}
           storageClassName: {{vm.storage_class}}
 
+    # VirtIO drivers ISO — cloned from shared DataSource
+    - metadata:
+        name: {{vm.name}}-virtio-win
+      spec:
+        sourceRef:
+          kind: DataSource
+          name: virtio-win-iso
+          namespace: openshift-virtualization-os-images
+        storage:
+          resources:
+            requests:
+              storage: 1Gi
+          storageClassName: {{vm.storage_class}}
+
   template:
     metadata:
       annotations:
@@ -106,6 +120,5 @@ spec:
             name: {{vm.name}}-data
           name: rootdisk
         - dataVolume:
-            name: virtio-win-iso
-            namespace: openshift-virtualization-os-images
+            name: {{vm.name}}-virtio-win
           name: virtio-win-iso
