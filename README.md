@@ -45,13 +45,12 @@ Copy and edit these templates instead of writing YAML or XML from scratch.
 Verify the cluster has the required resources:
 
 ```bash
-# DataSources (Windows ISOs)
-oc get datasource windows-11-25h2-amd64 -n openshift-virtualization-os-images
+# DataSource (Windows ISO)
 oc get datasource windows-server-2025 -n openshift-virtualization-os-images
 
 # Instance type and preference
 oc get virtualmachineclusterinstancetype u1.large
-oc get virtualmachineclusterpreference windows.11.virtio
+oc get virtualmachineclusterpreference windows.server.virtio
 
 # Network
 oc get network-attachment-definition vlan-60 -n default
@@ -441,7 +440,7 @@ echo "MAC:    $VM_MAC"
 
 ### Step 2: Create the VirtualMachine Manifest
 
-Create the YAML by hand or use `templates/windows11-vm.yaml` as a reference. Replace `<vm-name>`, UUIDs, and MAC with your values:
+Create the YAML by hand or use `templates/windows-server-2025-vm.yaml` as a reference. Replace `<vm-name>`, UUIDs, and MAC with your values:
 
 ```yaml
 apiVersion: kubevirt.io/v1
@@ -454,7 +453,7 @@ spec:
     name: u1.large
   preference:
     kind: VirtualMachineClusterPreference
-    name: windows.11.virtio
+    name: windows.server.virtio
   runStrategy: RerunOnFailure
 
   dataVolumeTemplates:
@@ -464,7 +463,7 @@ spec:
       spec:
         sourceRef:
           kind: DataSource
-          name: windows-11-25h2-amd64
+          name: windows-server-2025
           namespace: openshift-virtualization-os-images
         storage:
           resources:
@@ -542,8 +541,8 @@ spec:
 
 | Field | Purpose | Example |
 |---|---|---|
-| `metadata.name` | VM name | `win11-golden` |
-| `spec.dataVolumeTemplates[*].name` | Must match `<vm-name>-boot` and `<vm-name>-data` | `win11-golden-boot` |
+| `metadata.name` | VM name | `ws2025-golden` |
+| `spec.dataVolumeTemplates[*].name` | Must match `<vm-name>-boot` and `<vm-name>-data` | `ws2025-golden-boot` |
 | `firmware.uuid` / `firmware.serial` | Unique per VM | Output from Step 1 |
 | `interfaces[0].macAddress` | Static MAC (optional) | `02:f2:1a:73:a8:65` |
 | `networks[0].multus.networkName` | NetworkAttachmentDef ref | `default/vlan-60` |
@@ -567,8 +566,8 @@ oc get datavolume -n virt-windows -w
 
 # Expected output:
 # NAME                PHASE       PROGRESS
-# win11-golden-boot   Filling     25.3%
-# win11-golden-data   Bound       N/A
+# ws2025-golden-boot  Filling     25.3%
+# ws2025-golden-data  Bound       N/A
 ```
 
 The boot volume clone typically takes 2-5 minutes depending on storage performance.
@@ -601,10 +600,10 @@ oc virt-launcher-spice-url <vm-name> -n virt-windows
 
 ### Step 7: Install Windows
 
-1. VM boots from Windows ISO (bootOrder 2, CD-ROM)
+1. VM boots from Windows Server 2025 ISO (bootOrder 2, CD-ROM)
 2. Blank data disk (bootOrder 1) is the installation target
 3. If Windows does not detect the disk, load the virtio storage driver from `windows-drivers-disk`:
-   - Click **Load Driver** → browse to `viostor\w11\amd64\` (Windows 11) or `viostor\ws2025\amd64\` (Server 2025) → select driver
+   - Click **Load Driver** → browse to `viostor\ws2025\amd64\` → select driver
 4. Complete the Windows installation
 5. After reboot, install remaining virtio drivers from the drivers CD-ROM:
    - Network driver (`NetKVM`)
@@ -884,16 +883,16 @@ Generate VirtualMachine YAML for Windows guests:
 
 ```bash
 ./scripts/create-vm.sh \
-  --name win11-dev-01 \
+  --name ws2025-auto-01 \
   --namespace virt-windows \
-  --template windows11 \
+  --template windows-server-2025 \
   --instancetype u1.large \
   --data-size 100Gi \
   --network default/vlan-60 \
-  --mac 02:f2:1a:73:a8:65
+  --mac 02:f2:1a:73:a8:66
 
-oc apply -f win11-dev-01.yaml
-oc start vm/win11-dev-01 -n virt-windows
+oc apply -f ws2025-auto-01.yaml
+oc start vm/ws2025-auto-01 -n virt-windows
 ```
 
 **Options:**
@@ -956,7 +955,7 @@ Edit `ansible/group_vars/all.yml`:
 |----------|---------|-------------|
 | `vm_name` | `win11-auto-01` | VM name |
 | `vm_instancetype` | `u1.large` | Instance type |
-| `vm_preference` | `windows.11.virtio` | KubeVirt preference |
+| `vm_preference` | `windows.server.virtio` | KubeVirt preference |
 | `vm_data_size` | `100Gi` | Data disk size |
 | `vm_network` | `default/vlan-60` | Network attachment |
 | `vm_mac` | `02:f2:1a:73:a8:66` | MAC address (unique per VM) |
@@ -996,8 +995,8 @@ ansible-playbook site.yml --tags configure
 
 | Template | OS | DataSource | Min Disk |
 |----------|-----|------------|----------|
+| `windows-server-2025` | Windows Server 2025 | `windows-server-2025` | 30Gi |
 | `windows11` | Windows 11 25H2 | `windows-11-25h2-amd64` | 30Gi |
-| `windows2025` | Windows Server 2025 | `windows-2025-virtio-amd64` | 30Gi |
 
 ---
 
