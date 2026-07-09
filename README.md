@@ -65,12 +65,11 @@ oc get storageclass nfs-csi
 
 ### Architecture
 
-Each VM uses a four-disk pattern:
+Each VM uses a three-disk pattern:
 
 1. **Boot volume** — Cloned from the OS DataSource (30Gi). Attached as CD-ROM during install.
 2. **Data volume** — Blank disk (configurable size). The guest OS is installed here.
-3. **Virtio drivers (containerDisk)** — Red Hat containerDisk with baseline VirtIO drivers.
-4. **Virtio drivers (uploaded ISO)** — Latest ISO extracted from Red Hat RPM. Provides updated drivers.
+3. **Virtio drivers** — Uploaded ISO from Red Hat RPM. Provides network, storage, and balloon drivers.
 
 **Namespace strategy:**
 
@@ -510,9 +509,6 @@ spec:
               name: cdrom-iso
             - cdrom:
                 bus: sata
-              name: windows-drivers-disk
-            - cdrom:
-                bus: sata
               name: virtio-win-iso
           interfaces:
             - bridge: {}
@@ -540,9 +536,6 @@ spec:
         - dataVolume:
             name: <vm-name>-data
           name: rootdisk
-        - containerDisk:
-            image: registry.redhat.io/container-native-virtualization/virtio-win-rhel9@sha256:7e06e1f52a434d4602657c920144504fbaed955d0998535bdf345716355ce83a
-          name: windows-drivers-disk
         - dataVolume:
             name: virtio-win-iso
             namespace: openshift-virtualization-os-images
