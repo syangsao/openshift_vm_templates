@@ -33,7 +33,7 @@ The `templates/` directory contains:
 |---|---|
 | `windows-server-2025-vm.yaml` | VirtualMachine manifest for Server 2025 with `{{vm.*}}` placeholders |
 | `windows11-vm.yaml` | VirtualMachine manifest for Windows 11 with `{{vm.*}}` placeholders |
-| `autounattend.xml.example` | Windows OOBE automation XML with editable markers |
+| `autounattend.xml.example` | Windows Server 2025 Datacenter (Desktop Experience) autounattend XML with editable markers |
 
 Copy and edit these templates instead of writing YAML or XML from scratch.
 
@@ -900,7 +900,7 @@ For fully automated Windows installation without manual input. Attach as a CD-RO
 ```bash
 # 1. Copy and edit the template
 cp templates/autounattend.xml.example autounattend.xml
-# Edit: hostname, password, IP, Windows edition
+# Edit: hostname, password, IP, Windows edition, virtio driver paths (2k25 for Server 2025)
 
 # 2. Build ISO
 genisoimage -o autounattend.iso -J -l -no-emul-boot autounattend.xml
