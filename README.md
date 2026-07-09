@@ -432,12 +432,8 @@ VM_UUID=$(cat /proc/sys/kernel/random/uuid)
 # Firmware serial
 VM_SERIAL=$(cat /proc/sys/kernel/random/uuid)
 
-# MAC address (locally-administered, OUI 02:F2:1A)
-VM_MAC="02:f2:1a:73:a8:65"
-
 echo "UUID:   $VM_UUID"
 echo "Serial: $VM_SERIAL"
-echo "MAC:    $VM_MAC"
 ```
 
 ---
@@ -512,7 +508,6 @@ spec:
               name: virtio-win-iso
           interfaces:
             - bridge: {}
-              macAddress: <vm-mac>
               model: virtio
               name: default
               state: up
@@ -549,7 +544,6 @@ spec:
 | `metadata.name` | VM name | `ws2025-golden` |
 | `spec.dataVolumeTemplates[*].name` | Must match `<vm-name>-boot` and `<vm-name>-data` | `ws2025-golden-boot` |
 | `firmware.uuid` / `firmware.serial` | Unique per VM | Output from Step 1 |
-| `interfaces[0].macAddress` | Static MAC (optional) | `02:f2:1a:73:a8:65` |
 | `networks[0].multus.networkName` | NetworkAttachmentDef ref | `default/vlan-60` |
 
 ---
