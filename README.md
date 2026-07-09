@@ -54,7 +54,7 @@ oc get dv virtio-win-iso -n openshift-virtualization-os-images
 
 # Instance type and preference
 oc get virtualmachineclusterinstancetype u1.large
-oc get virtualmachineclusterpreference windows.server.virtio
+oc get virtualmachineclusterpreference windows.2k25.virtio
 
 # Network
 oc get network-attachment-definition vlan-60 -n default
@@ -453,7 +453,7 @@ spec:
     name: u1.large
   preference:
     kind: VirtualMachineClusterPreference
-    name: windows.server.virtio
+    name: windows.2k25.virtio
   runStrategy: RerunOnFailure
 
   dataVolumeTemplates:
@@ -954,7 +954,7 @@ Edit `ansible/group_vars/all.yml`:
 |----------|---------|-------------|
 | `vm_name` | `win11-auto-01` | VM name |
 | `vm_instancetype` | `u1.large` | Instance type |
-| `vm_preference` | `windows.server.virtio` | KubeVirt preference |
+| `vm_preference` | `windows.2k25.virtio` | KubeVirt preference |
 | `vm_data_size` | `100Gi` | Data disk size |
 | `vm_network` | `default/vlan-60` | Network attachment |
 | `vm_mac` | `02:f2:1a:73:a8:66` | MAC address (unique per VM) |

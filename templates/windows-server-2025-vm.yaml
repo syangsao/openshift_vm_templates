@@ -27,7 +27,7 @@ spec:
     name: {{vm.instancetype}}
   preference:
     kind: VirtualMachineClusterPreference
-    name: windows.server.virtio
+    name: windows.2k25.virtio
   runStrategy: RerunOnFailure
 
   dataVolumeTemplates:
